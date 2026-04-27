@@ -1,0 +1,183 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  # ─── Unit tests (no DB needed) ──────────────────────────────────────────────
+  unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+
+      - name: Install server dependencies
+        run: cd server && npm ci
+
+      - name: Install client dependencies
+        run: cd client && npm ci
+
+      - name: Run server unit tests
+        run: cd server && npm test
+
+      - name: Run client unit tests
+        run: cd client && npm test
+
+      - name: Upload server coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-coverage
+          path: server/coverage/
+          retention-days: 7
+
+  # ─── Integration tests (needs Postgres, no app server) ─────────────────────
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: studr_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install server dependencies
+        run: cd server && npm ci
+
+      - name: Run Prisma migrations
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/studr_test
+        run: cd server && npx prisma migrate deploy
+
+      - name: Seed database (XP rules, levels, badges)
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/studr_test
+        run: cd server && node prisma/seed.js
+
+      - name: Run integration tests
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/studr_test
+          JWT_SECRET: ci-test-secret-do-not-use-in-prod
+          TEST: '1'
+        run: cd server && npm run test:integration
+
+  # ─── E2E tests (needs Postgres + running app) ───────────────────────────────
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: [unit, integration]
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: studr_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+
+      - name: Install server dependencies
+        run: cd server && npm ci
+
+      - name: Install client dependencies
+        run: cd client && npm ci
+
+      - name: Run Prisma migrations
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/studr_test
+        run: cd server && npx prisma migrate deploy
+
+      - name: Seed database (XP rules, levels, badges)
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/studr_test
+        run: cd server && node prisma/seed.js
+
+      - name: Seed E2E users (premium + trial com estado limpo)
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/studr_test
+          E2E_PREMIUM_EMAIL: e2e.premium@studr.test
+          E2E_TRIAL_EMAIL: e2e.trial@studr.test
+          E2E_PASSWORD: E2eTest@2026
+        run: node server/scripts/seedE2EUsers.js
+
+      - name: Install Playwright browsers
+        run: cd client && npx playwright install --with-deps chromium
+
+      - name: Start backend (E2E mode)
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/studr_test
+          JWT_SECRET: ci-test-secret-do-not-use-in-prod
+          E2E_MODE: '1'
+          PORT: '4000'
+        run: cd server && node index.js &
+
+      - name: Wait for backend
+        run: npx --yes wait-on http://localhost:4000/api/health --timeout 30000
+
+      - name: Start frontend dev server
+        run: cd client && npm run dev &
+
+      - name: Wait for frontend
+        run: npx --yes wait-on http://localhost:5173 --timeout 30000
+
+      - name: Run E2E tests
+        env:
+          E2E_BASE_URL: http://localhost:5173
+          E2E_PREMIUM_EMAIL: e2e.premium@studr.test
+          E2E_TRIAL_EMAIL: e2e.trial@studr.test
+          E2E_PASSWORD: E2eTest@2026
+        run: cd client && npx playwright test
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: client/playwright-report/
+          retention-days: 7

@@ -1,0 +1,236 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                    String       @id @default(cuid())
+  email                 String       @unique
+  name                  String?
+  password              String
+  isVerified            Boolean      @default(false)
+  verificationCode      String?
+  trialEndsAt           DateTime     @default(now())
+  isPremium             Boolean      @default(false)
+  isBlocked             Boolean      @default(false)
+  sessionToken          String?
+  role                  String       @default("student")
+  affiliateStatus       String?
+  referralId            String?
+  referralSource        String?
+  xp                    Int          @default(0)
+  level                 Int          @default(1)
+  medals                String[]     @default([])
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  asaasCustomerId       String?      @unique
+  asaasSubscriptionId   String?      @unique
+  billingCycle          String?
+  lastPaymentDate       DateTime?
+  planId                String?
+  recoveryCode          String?
+  recoveryCodeExpiresAt DateTime?
+  subscriptionStatus    String?
+  trialQuestionsDate    String?           // YYYY-MM-DD of current daily counter window
+  trialQuestionsUsed    Int               @default(0)
+  currentLeague         String            @default("BRONZE")
+  exams                 Exam[]
+  plan                  Plan?        @relation(fields: [planId], references: [id])
+  devices               UserDevice[]
+  affiliateLink         AffiliateLink?
+  userBadges            UserBadge[]
+  userStreak            UserStreak?
+  xpRecord              UserXp?
+  userProgress          UserProgress[]
+  rankings              RankingSnapshot[]
+}
+
+model Plan {
+  id              String   @id @default(cuid())
+  kiwifyProductId String   @unique
+  name            String
+  accessLevel     String
+  billingCycle    String
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  users           User[]
+}
+
+model UserDevice {
+  id                String    @id @default(cuid())
+  userId            String
+  fingerprint       String
+  label             String?
+  isAuthorized      Boolean   @default(false)
+  authCode          String?
+  authCodeExpiresAt DateTime?
+  lastSeen          DateTime  @default(now())
+  createdAt         DateTime  @default(now())
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fingerprint])
+}
+
+model Exam {
+  id           String         @id @default(cuid())
+  userId       String
+  type         String         @default("LEGACY") // "PRACTICE", "MOCK_AREA", "MOCK_FULL", "LEGACY"
+  area         String?        // null for PRACTICE; area code for MOCK_AREA/MOCK_FULL
+  score        Float?
+  theta        Float?
+  band         String?
+  timeSpentSec Int?
+  finalizedAt  DateTime?
+  createdAt    DateTime       @default(now())
+
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questions ExamQuestion[]
+
+  @@index([userId, createdAt])
+  @@index([userId, type])
+}
+
+model ExamQuestion {
+  id            String    @id @default(cuid())
+  examId        String
+  orderIndex    Int
+  questionJson  Json
+  subject       String
+  difficulty    String    // "EASY", "MEDIUM", "HARD"
+  userAnswer    Int?
+  correctAnswer Int
+  isCorrect     Boolean   @default(false)
+  answeredAt    DateTime?
+
+  exam Exam @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  @@unique([examId, orderIndex])
+  @@index([examId])
+}
+
+model QuestionCalibration {
+  id         String   @id @default(cuid())
+  difficulty String   @unique  // "EASY", "MEDIUM", "HARD"
+  a          Float              // discriminação
+  b          Float              // dificuldade (θ)
+  c          Float              // chute (pseudo-acerto)
+  updatedAt  DateTime @updatedAt
+}
+
+// ─── Gamification ─────────────────────────────────────────────────────────────
+
+model XpRule {
+  id        String   @id @default(cuid())
+  eventType String   @unique
+  xp        Int
+  updatedAt DateTime @updatedAt
+}
+
+model LevelThreshold {
+  level      Int    @id
+  xpRequired Int
+  title      String
+}
+
+model Badge {
+  key         String      @id
+  title       String
+  description String
+  category    String      // "PROGRESS", "SUBJECT", "ESSAY", "MOCK", "HABIT"
+  criteria    Json
+  iconEmoji   String?
+
+  awardedTo UserBadge[]
+}
+
+model UserBadge {
+  id        String   @id @default(cuid())
+  userId    String
+  badgeKey  String
+  awardedAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge Badge @relation(fields: [badgeKey], references: [key])
+
+  @@unique([userId, badgeKey])
+  @@index([userId])
+}
+
+model UserStreak {
+  userId         String    @id
+  currentStreak  Int       @default(0)
+  longestStreak  Int       @default(0)
+  lastActiveDate DateTime?
+  multiplier     Float     @default(1.0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserXp {
+  userId       String   @id
+  totalXp      Int      @default(0)
+  level        Int      @default(1)
+  weeklyXp     Int      @default(0)
+  weekStartsAt DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserProgress {
+  id                String @id @default(cuid())
+  userId            String
+  subject           String
+  questionsAnswered Int    @default(0)
+  questionsCorrect  Int    @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, subject])
+  @@index([userId])
+}
+
+model RankingSnapshot {
+  id        String   @id @default(cuid())
+  userId    String
+  weekStart DateTime
+  league    String   // "BRONZE", "SILVER", "GOLD", "DIAMOND"
+  weeklyXp  Int
+  position  Int      // posição final na liga naquela semana
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekStart])
+  @@index([weekStart, league])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+
+model AffiliateProduct {
+  id              String   @id @default(cuid())
+  productType     String   @unique  // 'monthly' | 'annual' | 'simulado'
+  label           String            // display name
+  checkoutUrl     String
+  kiwifyInviteLink String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model AffiliateLink {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  slug                  String   @unique
+  discountTypeMonthly   String?
+  discountValueMonthly  Float?
+  discountTypeAnnual    String?
+  discountValueAnnual   Float?
+  discountTypeSimulado  String?
+  discountValueSimulado Float?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
