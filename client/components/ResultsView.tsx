@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { jsPDF } from "jspdf"; // Certifique-se de ter instalado: npm install jspdf
 import { AreaOfKnowledge, Question, SisuPrediction, StudyRecommendation } from '../types';
 import { analyzeSisuChances, generateStudyPlan } from '../services/aiClientService';
 import { Button, Card, LoadingSpinner, Badge } from './UIComponents';
@@ -56,6 +57,37 @@ const ResultsView: React.FC<ResultsViewProps> = ({ questions, userAnswers, final
     } finally {
       setLoadingAnalysis(false);
     }
+  };
+
+  // ─── Lógica Adicionada (PDF) ─────────────────────────────────────────────────
+  const generatePDFReport = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(20);
+    doc.text("Relatório de Desempenho - Studr", 20, 20);
+    
+    doc.setFontSize(12);
+    doc.text(`Média Final TRI: ${score}`, 20, 40);
+    doc.text(`Taxa de Acertos: ${accuracy.toFixed(1)}% (${correctCount} de ${questions.length})`, 20, 50);
+    
+    if (recommendations.length > 0) {
+      doc.text("O que melhorar (Alta Prioridade):", 20, 70);
+      const altas = recommendations.filter(r => r.priority === 'Alta');
+      if (altas.length > 0) {
+         altas.forEach((r, idx) => doc.text(`- ${r.topic}`, 20, 80 + (idx * 10)));
+      } else {
+         doc.text("- Você está indo muito bem, mantenha o ritmo!", 20, 80);
+      }
+
+      const offset = 80 + (altas.length * 10) + 10;
+      doc.text("O que revisar (Média Prioridade):", 20, offset);
+      recommendations.filter(r => r.priority !== 'Alta').forEach((r, idx) => {
+         doc.text(`- ${r.topic}`, 20, offset + 10 + (idx * 10));
+      });
+    } else {
+      doc.text("Gere o seu plano de estudos consultando o simulador para ver os pontos fortes.", 20, 70);
+    }
+    
+    doc.save("meu_relatorio_studr.pdf");
   };
 
   // Prepare Chart Data
@@ -226,7 +258,12 @@ const ResultsView: React.FC<ResultsViewProps> = ({ questions, userAnswers, final
         </div>
       )}
 
+      {/* Ações Finais / Download PDF */}
       <div className="flex flex-col sm:flex-row gap-3 justify-center pt-6">
+        {/* Botão de PDF Incremental */}
+        <Button onClick={generatePDFReport} className="w-full sm:w-auto px-8 py-3 bg-green-600 hover:bg-green-700 text-white font-bold shadow-lg shadow-green-500/20 border-0">
+          📥 Relatório PDF
+        </Button>
         <Button onClick={onNewMockExam} variant="primary" className="w-full sm:w-auto px-8 py-3">
           Refazer Simulado
         </Button>

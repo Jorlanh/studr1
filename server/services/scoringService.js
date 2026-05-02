@@ -105,7 +105,6 @@ export async function calculateScore(responses) {
   }
 
   // A nota final do Simulado é a média aritmética das áreas que o aluno respondeu
-  // Aqui você pode plugar a nota da Redação depois!
   const finalScore = areasCount > 0 ? Math.round(totalScoreSum / areasCount) : 0;
   const overallTheta = estimateTheta(responses);
 
@@ -114,5 +113,25 @@ export async function calculateScore(responses) {
     score: finalScore, 
     band: scoreToBand(finalScore),
     scoresByArea 
+  };
+}
+
+// ─── Lógica Adicionada (Redação e Média Final) ──────────────────────────────
+export async function calculateFinalGrade(responses, redacaoScore = 0) {
+  const triResults = await calculateScore(responses); 
+  
+  // Se não houver nota de redação definida, usamos apenas a média das áreas.
+  // Se houver, dividimos o total (Soma das Áreas + Redação) por (Número de áreas + 1)
+  const areasTotal = Object.values(triResults.scoresByArea).reduce((a, b) => a + b, 0);
+  const totalSum = areasTotal + redacaoScore;
+  const divisor = Object.keys(triResults.scoresByArea).length + (redacaoScore > 0 ? 1 : 0);
+  
+  const finalAverage = divisor > 0 ? Math.round(totalSum / divisor) : 0;
+  
+  return {
+    ...triResults,
+    redacaoScore,
+    finalAverage,
+    band: scoreToBand(finalAverage)
   };
 }

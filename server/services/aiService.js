@@ -39,6 +39,33 @@ const withTimeout = (promise, ms) => {
     ]);
 };
 
+// ─── ALGORITMO DE EMBARALHAMENTO (FISHER-YATES) ───
+// Resolve o problema da alternativa certa ser sempre a letra C (índice 2)
+function shuffleOptionsAndIndex(question) {
+    let safeIndex = question.correctIndex;
+    if (typeof safeIndex !== 'number' || safeIndex < 0 || safeIndex >= question.options.length) {
+        safeIndex = 0; // Fallback de segurança
+    }
+
+    const options = [...question.options];
+    const correctOptionText = options[safeIndex]; // Salva o texto da resposta correta
+    
+    // Embaralha o array de opções
+    for (let i = options.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [options[i], options[j]] = [options[j], options[i]];
+    }
+    
+    // Procura o novo índice da resposta correta após o embaralhamento
+    const newCorrectIndex = options.indexOf(correctOptionText);
+    
+    return {
+        ...question,
+        options,
+        correctIndex: newCorrectIndex !== -1 ? newCorrectIndex : 0
+    };
+}
+
 // ==========================================
 // 🧠 ORQUESTRADOR HÍBRIDO (Gemini & Groq)
 // ==========================================
@@ -92,7 +119,7 @@ const callGroq = async (messages, isJson) => {
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            model: "llama-3.1-8b-instant", // Modelo mais estável e rápido do Groq
+            model: "llama-3.1-8b-instant", 
             messages: messages,
             temperature: 0.7,
             response_format: isJson ? { type: "json_object" } : undefined
@@ -110,7 +137,7 @@ const callGroq = async (messages, isJson) => {
     return data.choices[0].message.content;
 };
 
-// --- ROTERIZADOR DE TRÁFEGO ---
+// --- ROTERIZADOR DE TRÁFEGO COM TIMEOUT EMBUTIDO ---
 const executeHybridAI = async (messages, isJson = true, retries = 1, timeoutMs = 28000) => {
     const now = Date.now();
     let selectedProvider = primaryProvider;
@@ -178,14 +205,7 @@ Retorne APENAS JSON estruturado, sem texto ou formatação fora do JSON.`;
 // 🚀 ENDPOINTS DA API
 // ==========================================
 
-/**
- * GERAÇÃO DE QUESTÕES COM CAP ABSOLUTO DE PERFORMANCE
- * Garante que o servidor NUNCA dê timeout, limitando o peso da IA.
- */
 export const generateQuestionBatch = async (area, requestedCount = 1, specificTopic, excludeTopics = [], isReviewErrors = false) => {
-    // 🛡️ O SEGREDO DO SUCESSO: Trava absoluta de 5 questões por requisição.
-    // O Gemini gera 5 questões com perfeição em ~20 segundos.
-    // O seu Frontend vai receber essas 5, abrir a tela do usuário e pedir mais 5 em background.
     const count = Math.min(requestedCount, 5); 
 
     console.log(`[AI:Batch] Gerando pacote veloz de ${count} questões para ${area}...`);
@@ -232,37 +252,44 @@ Retorne SOMENTE um JSON com a chave "questions" contendo um array de exatos ${co
 
     while (attempts < maxAttempts) {
         try {
-            // Um timeout generoso de 30 segundos, que dá bastante margem para a IA gerar 5 questões.
             const rawResponse = await executeHybridAI(messages, true, 1, 30000);
             const content = parseSafeJSON(rawResponse);
             let parsedQuestions = content.questions || (Array.isArray(content) ? content : [content]);
             
             parsedQuestions = parsedQuestions.filter(q => q && q.stem);
 
-            // FILTRO AGRESSIVO: Rejeita se as alternativas forem preguiçosas
+            // FILTRO AGRESSIVO: Rejeita se as alternativas forem preguiçosas ou repetidas
             const invalidQuestions = parsedQuestions.filter(q => {
                 if (!q.options || q.options.length !== 5) return true;
-                return q.options.some(opt => {
-                    if (typeof opt !== 'string') return true;
-                    const cleanText = opt.replace(/^[A-E][)\-\.\s=:]+/gi, '').trim();
-                    return cleanText.length < 10; 
-                });
+                
+                const cleanedOptions = q.options.map(opt => typeof opt === 'string' ? opt.replace(/^[A-E][)\-\.\s=:]+/gi, '').trim() : '');
+                
+                if (cleanedOptions.some(opt => opt.length < 10)) return true; 
+                
+                // INCREMENTO: Verificação de Alternativas Repetidas com Set
+                const uniqueOptions = new Set(cleanedOptions.map(o => o.toLowerCase()));
+                if (uniqueOptions.size !== 5) return true;
+
+                return false;
             });
 
             if (invalidQuestions.length > 0) {
-                 console.warn(`[AI:Validation] Tentativa gerou alternativas inválidas ou curtas. Refazendo...`);
+                 console.warn(`[AI:Validation] Lote gerou alternativas inválidas ou repetidas. Refazendo...`);
                  attempts++;
                  continue;
             }
 
-            // LIMPEZA FORÇADA DAS LETRAS INICIAIS CASO TENHAM VAZADO
-            const cleanedQuestions = parsedQuestions.map(q => ({
-                ...q,
-                options: q.options.map(opt => opt.replace(/^[A-E][)\-\.\s=:]+/gi, '').trim())
-            }));
+            // LIMPEZA FORÇADA DAS LETRAS INICIAIS E EMBARALHAMENTO DAS RESPOSTAS
+            const processedQuestions = parsedQuestions.map(q => {
+                const cleanedOptions = q.options.map(opt => opt.replace(/^[A-E][)\-\.\s=:]+/gi, '').trim());
+                const qCleaned = { ...q, options: cleanedOptions };
+                
+                // INCREMENTO: Embaralha as respostas para tirar o vício da letra C
+                return shuffleOptionsAndIndex(qCleaned);
+            });
 
-            console.log(`[AI:Batch] Sucesso absoluto! ${cleanedQuestions.length} questões prontas e limpas.`);
-            return cleanedQuestions;
+            console.log(`[AI:Batch] Sucesso absoluto! ${processedQuestions.length} questões prontas, limpas e embaralhadas.`);
+            return processedQuestions;
 
         } catch (error) {
             console.warn(`[AI:Batch] Tentativa ${attempts + 1} falhou: ${error.message}`);
