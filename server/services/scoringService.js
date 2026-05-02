@@ -2,78 +2,53 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// ─── Calibration cache (10 min TTL) ──────────────────────────────────────────
-let _cal = null;
-let _calAt = 0;
-
-async function getCalibrations() {
-  if (_cal && Date.now() - _calAt < 10 * 60 * 1000) return _cal;
-  const rows = await prisma.questionCalibration.findMany();
-  _cal = Object.fromEntries(rows.map(r => [r.difficulty, r]));
-  _calAt = Date.now();
-  return _cal;
-}
-
-// ─── 3PL Model ───────────────────────────────────────────────────────────────
-
-/**
- * Probabilidade de acerto no modelo 3PL (Three-Parameter Logistic).
- * @param {number} theta  - Habilidade do candidato
- * @param {number} a      - Parâmetro de discriminação
- * @param {number} b      - Parâmetro de dificuldade
- * @param {number} c      - Parâmetro de pseudo-acerto (chute)
- */
+// ─── 3PL Model (Modelo Logístico de 3 Parâmetros) ──────────────────────────
 export function p3PL(theta, a, b, c) {
   return c + (1 - c) / (1 + Math.exp(-a * (theta - b)));
 }
 
-// ─── MLE Estimator ───────────────────────────────────────────────────────────
-
-function logLikelihood(responses, theta, cal) {
+// ─── Estimador de Máxima Verossimilhança (MLE) ─────────────────────────────
+function logLikelihood(responses, theta) {
   let sum = 0;
   for (const r of responses) {
-    const params = cal[r.difficulty];
-    if (!params) continue;
-    const p = p3PL(theta, params.a, params.b, params.c);
+    // Parâmetros simulados baseados na dificuldade da questão
+    const a = r.difficulty === 'HARD' ? 1.5 : (r.difficulty === 'MEDIUM' ? 1.0 : 0.5); // Discriminação
+    const b = r.difficulty === 'HARD' ? 1.5 : (r.difficulty === 'MEDIUM' ? 0.0 : -1.5); // Dificuldade real
+    const c = 0.2; // Taxa de acerto casual (chute - 20% no ENEM com 5 opções)
+    
+    const p = p3PL(theta, a, b, c);
     const eps = 1e-9;
     sum += r.correct ? Math.log(p + eps) : Math.log(1 - p + eps);
   }
   return sum;
 }
 
-/**
- * Estima θ por grid search em duas passagens:
- *  1. Grid grosso de -3 a +3 com passo 0.1
- *  2. Refinamento de ±0.1 em torno do melhor ponto com passo 0.01
- */
-function estimateTheta(responses, cal) {
+function estimateTheta(responses) {
   let bestTheta = 0;
   let bestLL = -Infinity;
 
+  // Busca grossa
   for (let theta = -3; theta <= 3; theta += 0.1) {
-    const ll = logLikelihood(responses, theta, cal);
+    const ll = logLikelihood(responses, theta);
     if (ll > bestLL) { bestLL = ll; bestTheta = theta; }
   }
 
+  // Refinamento
   const min = Math.max(-3, bestTheta - 0.1);
   const max = Math.min(3,  bestTheta + 0.1);
   for (let theta = min; theta <= max; theta += 0.01) {
-    const ll = logLikelihood(responses, theta, cal);
+    const ll = logLikelihood(responses, theta);
     if (ll > bestLL) { bestLL = ll; bestTheta = theta; }
   }
 
   return bestTheta;
 }
 
-// ─── Scale conversion ─────────────────────────────────────────────────────────
-
-/**
- * Converte θ para a escala ENEM (300–900).
- * Fórmula linear: 500 + 100 * θ, clampada nos extremos.
- */
+// ─── Conversão de Escala (Nota ENEM 0 a 1000) ─────────────────────────────────
 export function thetaToScore(theta) {
-  const raw = 500 + 100 * theta;
-  return Math.max(300, Math.min(900, Math.round(raw)));
+  // O ENEM padroniza a proficiência com média ~500 e desvio padrão ~100
+  const raw = 500 + (100 * theta);
+  return Math.max(0, Math.min(1000, Math.round(raw)));
 }
 
 export function scoreToBand(score) {
@@ -85,31 +60,59 @@ export function scoreToBand(score) {
   return 'Elite';
 }
 
-// ─── Public API ───────────────────────────────────────────────────────────────
-
-/**
- * Calcula nota TRI pelo modelo 3PL via MLE numérico.
- *
- * @param {Array<{ difficulty: 'EASY'|'MEDIUM'|'HARD', correct: boolean }>} responses
- * @returns {Promise<{ theta: number, score: number, band: string }>}
- */
+// ─── API Pública ──────────────────────────────────────────────────────────────
 export async function calculateScore(responses) {
   if (!responses || responses.length === 0) {
-    return { theta: null, score: 300, band: 'Insuficiente' };
+    return { theta: null, score: 0, band: 'Insuficiente' };
   }
 
-  const cal = await getCalibrations();
+  // Agrupar respostas por área de conhecimento
+  const responsesByArea = {
+    HUMANAS: [],
+    LINGUAGENS: [],
+    NATUREZA: [],
+    MATEMATICA: []
+  };
 
-  if (Object.keys(cal).length === 0) {
-    console.warn('[scoringService] Nenhuma calibração encontrada no banco. Execute o seed.');
-    // Fallback: heurística simples para não travar a produção
-    const correct = responses.filter(r => r.correct).length;
-    const pct = correct / responses.length;
-    const score = Math.round(300 + 600 * Math.pow(pct, 0.9));
-    return { theta: null, score: Math.max(300, Math.min(900, score)), band: scoreToBand(score) };
+  responses.forEach(r => {
+    // Tratativa para caso o frontend mande o nome em vez do enum, ou não mande area
+    const areaMap = {
+      'Ciências Humanas': 'HUMANAS',
+      'Linguagens': 'LINGUAGENS',
+      'Ciências da Natureza': 'NATUREZA',
+      'Matemática': 'MATEMATICA'
+    };
+    const mappedArea = areaMap[r.area] || r.area;
+    
+    if (responsesByArea[mappedArea]) {
+      responsesByArea[mappedArea].push(r);
+    }
+  });
+
+  const scoresByArea = {};
+  let totalScoreSum = 0;
+  let areasCount = 0;
+
+  // Calcula a nota TRI para cada área separadamente
+  for (const [area, areaResponses] of Object.entries(responsesByArea)) {
+    if (areaResponses.length > 0) {
+      const areaTheta = estimateTheta(areaResponses);
+      const areaScore = thetaToScore(areaTheta);
+      scoresByArea[area] = areaScore;
+      totalScoreSum += areaScore;
+      areasCount++;
+    }
   }
 
-  const theta = estimateTheta(responses, cal);
-  const score = thetaToScore(theta);
-  return { theta, score, band: scoreToBand(score) };
+  // A nota final do Simulado é a média aritmética das áreas que o aluno respondeu
+  // Aqui você pode plugar a nota da Redação depois!
+  const finalScore = areasCount > 0 ? Math.round(totalScoreSum / areasCount) : 0;
+  const overallTheta = estimateTheta(responses);
+
+  return { 
+    theta: overallTheta, 
+    score: finalScore, 
+    band: scoreToBand(finalScore),
+    scoresByArea 
+  };
 }

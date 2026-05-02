@@ -59,13 +59,12 @@ export function MockProvider({ children }: PropsWithChildren) {
   const [loading, setLoading] = useState(false);
 
   const isFetchingRef = useRef(false);
-  const fetchPromiseRef = useRef<Promise<number> | null>(null);
   const simuladoModeRef = useRef(simuladoMode);
   const simuladoTargetAreaRef = useRef(simuladoTargetArea);
   const simuladoTargetCountRef = useRef(simuladoTargetCount);
   const currentExamIdRef = useRef(currentExamId);
 
-  // Keep refs in sync for use inside timer callback
+  // Keep refs in sync for use inside callbacks and background loops
   useEffect(() => { simuladoModeRef.current = simuladoMode; }, [simuladoMode]);
   useEffect(() => { simuladoTargetAreaRef.current = simuladoTargetArea; }, [simuladoTargetArea]);
   useEffect(() => { simuladoTargetCountRef.current = simuladoTargetCount; }, [simuladoTargetCount]);
@@ -73,19 +72,10 @@ export function MockProvider({ children }: PropsWithChildren) {
 
   const handleTimeUp = useCallback(() => {
     // Time's up — finalize from the ref values
+    finalizeWithPartial();
   }, []);
 
   const { timeRemaining, isTimeUp, startTimer, stopTimer, resetTimer } = useTimer(handleTimeUp);
-
-  const getAreaForIndex = useCallback((index: number): AreaOfKnowledge => {
-    if (simuladoModeRef.current === 'AREA' && simuladoTargetAreaRef.current) {
-      return simuladoTargetAreaRef.current;
-    }
-    if (index < 45) return AreaOfKnowledge.HUMANAS;
-    if (index < 90) return AreaOfKnowledge.LINGUAGENS;
-    if (index < 135) return AreaOfKnowledge.NATUREZA;
-    return AreaOfKnowledge.MATEMATICA;
-  }, []);
 
   const fetchBatchWithRetry = useCallback(async (
     area: AreaOfKnowledge,
@@ -109,48 +99,66 @@ export function MockProvider({ children }: PropsWithChildren) {
     throw lastErr;
   }, []);
 
-  // Background fetch for simulado
-  useEffect(() => {
-    if (view === AppView.MOCK_EXAM) {
-      loadMoreInBackground();
-    }
-  }, [currentQuestionIndex, questions.length, view]);
+  // ==========================================
+  // 🔄 MOTOR DE BUFFER EM SEGUNDO PLANO
+  // ==========================================
+  const fillSimuladoInBackground = useCallback(async (
+    mode: 'FULL' | 'AREA',
+    targetArea: AreaOfKnowledge | null,
+    targetCount: number,
+    initialQuestions: Question[],
+    examId: string | null
+  ) => {
+    let missing = targetCount - initialQuestions.length;
+    let currentExcludes = Array.from(new Set(initialQuestions.map(q => q.subject).filter(Boolean))) as string[];
 
-  const loadMoreInBackground = useCallback((): Promise<number> => {
-    // If already fetching, return the in-progress promise so callers can await it
-    if (isFetchingRef.current && fetchPromiseRef.current) return fetchPromiseRef.current;
-    const targetCount = simuladoTargetCountRef.current;
-    const needsMore = (questions.length - currentQuestionIndex) <= 10;
-    const isBelowCap = questions.length < targetCount;
+    console.log(`[Buffer] Iniciando download silencioso das ${missing} questões restantes...`);
 
-    if (!needsMore || !isBelowCap) return Promise.resolve(0);
-
-    const nextIndex = questions.length;
-    const areaToFetch = getAreaForIndex(nextIndex);
-    const countToFetch = Math.min(10, targetCount - questions.length);
-    if (countToFetch <= 0) return Promise.resolve(0);
-
-    isFetchingRef.current = true;
-    if (questions.length === 0) setLoading(true);
-    const promise = (async () => {
+    while (missing > 0 && simuladoModeRef.current !== null) {
+      const batchSize = Math.min(15, missing);
+      
       try {
-        const currentSubjects = questions.map(q => q.subject).filter(Boolean) as string[];
-        const excludeTopics = Array.from(new Set(currentSubjects)).slice(-10);
-        const newBatch = await fetchBatchWithRetry(areaToFetch, countToFetch, excludeTopics, currentExamIdRef.current ?? undefined);
-        setQuestions(prev => [...prev, ...newBatch]);
-        return newBatch.length;
-      } catch {
-        console.error('[Simulado] background fetch failed after retries');
-        return 0;
-      } finally {
-        setLoading(false);
-        isFetchingRef.current = false;
-        fetchPromiseRef.current = null;
+        // Calcula a área correta baseada em quantas já foram carregadas (Essencial para o modo FULL)
+        const nextIndex = targetCount - missing;
+        let areaToFetch = targetArea || AreaOfKnowledge.HUMANAS;
+        
+        if (mode === 'FULL') {
+          if (nextIndex < 45) areaToFetch = AreaOfKnowledge.HUMANAS;
+          else if (nextIndex < 90) areaToFetch = AreaOfKnowledge.LINGUAGENS;
+          else if (nextIndex < 135) areaToFetch = AreaOfKnowledge.NATUREZA;
+          else areaToFetch = AreaOfKnowledge.MATEMATICA;
+        }
+
+        const newBatch = await fetchBatchWithRetry(areaToFetch, batchSize, currentExcludes, examId ?? undefined);
+
+        if (newBatch && newBatch.length > 0) {
+          // Atualiza o estado da prova injetando as questões sem travar a tela
+          setQuestions(prev => {
+              const updated = [...prev, ...newBatch];
+              return updated;
+          });
+          missing -= newBatch.length;
+          
+          newBatch.forEach(q => {
+            if (q.subject) currentExcludes.push(q.subject);
+          });
+          currentExcludes = currentExcludes.slice(-20); // Mantém a lista limpa
+        }
+
+        // Descanso para não engarrafar a API do provedor (Rate Limit)
+        await new Promise(res => setTimeout(res, 3000)); 
+      } catch (error) {
+        console.warn("[Simulado Buffer] Falha no lote de fundo. Tentando de novo em 5s...");
+        await new Promise(res => setTimeout(res, 5000));
       }
-    })();
-    fetchPromiseRef.current = promise;
-    return promise;
-  }, [questions, currentQuestionIndex, getAreaForIndex, fetchBatchWithRetry]);
+    }
+    
+    if (missing === 0) {
+        console.log("✅ Buffer Concluído: Todas as 180 questões foram carregadas na memória!");
+    }
+  }, [fetchBatchWithRetry]);
+
+  // ==========================================
 
   const finalizeSimulado = useCallback(async (questionsToScore: Question[]) => {
     stopTimer();
@@ -206,7 +214,6 @@ export function MockProvider({ children }: PropsWithChildren) {
     const targetCount = mode === 'FULL' ? 180 : 45;
     setSimuladoTargetCount(targetCount);
 
-    // Server-side plan check + create Exam record
     let examId: string | null = null;
     try {
       const startResult = await apiRequest('/mock/start', 'POST', { mode, area: targetArea || null });
@@ -221,8 +228,7 @@ export function MockProvider({ children }: PropsWithChildren) {
           WEEKLY_MOCK_LIMIT_REACHED: 'Trial permite 1 simulado por semana. Assine o Premium para simulados ilimitados.',
           MONTHLY_MOCK_LIMIT_REACHED: 'Seu plano permite 1 simulado por mês. O próximo estará disponível no início do mês.',
         };
-        const reason = e?.message || '';
-        alert(msgs[reason] || 'Limite do seu plano atingido. Considere fazer upgrade para Premium.');
+        alert(msgs[e?.message || ''] || 'Limite do seu plano atingido. Considere fazer upgrade para Premium.');
         openPricing();
       }
       return;
@@ -230,7 +236,9 @@ export function MockProvider({ children }: PropsWithChildren) {
 
     try {
       let initialArea = mode === 'AREA' && targetArea ? targetArea : AreaOfKnowledge.HUMANAS;
-      const initialBatch = await generateQuestionBatch(initialArea, 15, undefined, [], false, true, examId ?? undefined);
+      
+      // Gera apenas o lote inicial (15 questões) para destravar a tela imediatamente
+      const initialBatch = await fetchBatchWithRetry(initialArea, 15, [], examId ?? undefined);
 
       setQuestions(initialBatch);
       setCurrentQuestionIndex(0);
@@ -240,6 +248,12 @@ export function MockProvider({ children }: PropsWithChildren) {
       startTimer(duration);
 
       navigate(AppView.MOCK_EXAM);
+
+      // DISPARA A MÁGICA: O motor de fundo vai baixar o resto silenciosamente sem travar a navegação
+      if (initialBatch.length < targetCount) {
+          fillSimuladoInBackground(mode, targetArea || null, targetCount, initialBatch, examId);
+      }
+
     } catch (e: any) {
       let msg = 'Erro ao gerar simulado. Tente novamente.';
       if (e?.status === 429) msg = 'Muitos simulados sendo gerados agora. Aguarde um instante e tente novamente.';
@@ -248,7 +262,7 @@ export function MockProvider({ children }: PropsWithChildren) {
       setLoading(false);
       isFetchingRef.current = false;
     }
-  }, [navigate, openPricing, startTimer]);
+  }, [navigate, openPricing, startTimer, fetchBatchWithRetry, fillSimuladoInBackground]);
 
   const handleAnswerSelect = useCallback((optionIndex: number) => {
     if (isTimeUp) return;
@@ -263,7 +277,6 @@ export function MockProvider({ children }: PropsWithChildren) {
 
     setUserAnswers(prev => ({ ...prev, [currentQ.id]: optionIndex }));
 
-    // Record answer in DB (fire-and-forget)
     const examId = currentExamIdRef.current;
     if (examId) {
       apiRequest(`/exams/${examId}/questions/${currentQuestionIndex}/answer`, 'PUT', { userAnswer: optionIndex })
@@ -282,16 +295,13 @@ export function MockProvider({ children }: PropsWithChildren) {
 
     const isLastLoaded = currentQuestionIndex === questions.length - 1;
     if (isLastLoaded) {
-      setLoading(true);
-      const added = await loadMoreInBackground();
-      setLoading(false);
-      if (added <= 0) {
-        openFetchError();
-        return;
-      }
+      // O aluno respondeu mais rápido que o download em background. Pedimos para ele aguardar um segundo.
+      openFetchError();
+      return;
     }
+    
     setCurrentQuestionIndex(prev => prev + 1);
-  }, [currentQuestionIndex, questions, isTimeUp, finalizeSimulado, loadMoreInBackground, openFetchError]);
+  }, [currentQuestionIndex, questions, isTimeUp, finalizeSimulado, openFetchError]);
 
   const handlePrevious = useCallback(() => {
     setCurrentQuestionIndex(prev => Math.max(0, prev - 1));
@@ -301,6 +311,7 @@ export function MockProvider({ children }: PropsWithChildren) {
     stopTimer();
     resetTimer();
     isFetchingRef.current = false;
+    setSimuladoMode(null); // Isso mata o loop em background instantaneamente
     setLoading(false);
     setQuestions([]);
     setCurrentQuestionIndex(0);
@@ -310,15 +321,16 @@ export function MockProvider({ children }: PropsWithChildren) {
   const retryFetchNext = useCallback(async () => {
     setFetchErrorRetrying(true);
     try {
-      const added = await loadMoreInBackground();
-      if (added > 0) {
+      // Como o motor está em background, a gente só aguarda 2s e checa se novas questões já chegaram no array
+      await new Promise(res => setTimeout(res, 2000));
+      if (currentQuestionIndex < questions.length - 1) {
         closeFetchError();
         setCurrentQuestionIndex(prev => prev + 1);
       }
     } finally {
       setFetchErrorRetrying(false);
     }
-  }, [loadMoreInBackground, closeFetchError, setFetchErrorRetrying]);
+  }, [currentQuestionIndex, questions.length, closeFetchError, setFetchErrorRetrying]);
 
   const finalizeWithPartial = useCallback(() => {
     closeFetchError();

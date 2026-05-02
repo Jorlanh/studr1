@@ -101,7 +101,7 @@ const EssayView: React.FC<EssayViewProps> = ({ onBack, onSuccess }) => {
   };
 
   const APPROX_WORDS_PER_LINE = 10; // folha ENEM ~10 palavras por linha manuscrita
-  const MIN_PALAVRAS = 500;
+  const MIN_PALAVRAS = 80;
   const MIN_LINHAS = 7;
   const MAX_LINHAS = 30;
 

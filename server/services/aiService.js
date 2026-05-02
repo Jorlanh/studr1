@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 // Inicializa as variáveis de ambiente do .env
 dotenv.config();
 
-// Utilitário de atraso (Delay) e Parsing seguro
+// Utilitário de atraso (Delay)
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const parseSafeJSON = (text) => {
@@ -16,11 +16,27 @@ const parseSafeJSON = (text) => {
         if (match) {
            return JSON.parse(match[1]);
         }
-        
         // Se a regex falhar, tenta apenas limpar os crases comuns
         const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
         return JSON.parse(cleaned);
     }
+};
+
+// Utilitário de Timeout Forçado
+const withTimeout = (promise, ms) => {
+    let timeoutId;
+    const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+            const err = new Error('APITimeoutError');
+            err.name = 'APITimeoutError';
+            err.status = 408;
+            reject(err);
+        }, ms);
+    });
+    return Promise.race([
+        promise.finally(() => clearTimeout(timeoutId)),
+        timeoutPromise
+    ]);
 };
 
 // ==========================================
@@ -76,7 +92,7 @@ const callGroq = async (messages, isJson) => {
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            model: "llama3-8b-8192", 
+            model: "llama-3.1-8b-instant", // Modelo mais estável e rápido do Groq
             messages: messages,
             temperature: 0.7,
             response_format: isJson ? { type: "json_object" } : undefined
@@ -84,7 +100,8 @@ const callGroq = async (messages, isJson) => {
     });
 
     if (!response.ok) {
-        const err = new Error(`Groq HTTP error ${response.status}`);
+        const errText = await response.text();
+        const err = new Error(`Groq HTTP error ${response.status}: ${errText}`);
         err.status = response.status;
         throw err;
     }
@@ -94,7 +111,7 @@ const callGroq = async (messages, isJson) => {
 };
 
 // --- ROTERIZADOR DE TRÁFEGO ---
-const executeHybridAI = async (messages, isJson = true, retries = 2) => {
+const executeHybridAI = async (messages, isJson = true, retries = 1, timeoutMs = 28000) => {
     const now = Date.now();
     let selectedProvider = primaryProvider;
 
@@ -107,9 +124,9 @@ const executeHybridAI = async (messages, isJson = true, retries = 2) => {
         let responseText = "";
         
         if (selectedProvider === 'gemini') {
-            responseText = await callGemini(messages, isJson);
+            responseText = await withTimeout(callGemini(messages, isJson), timeoutMs);
         } else {
-            responseText = await callGroq(messages, isJson);
+            responseText = await withTimeout(callGroq(messages, isJson), timeoutMs);
         }
 
         console.log(`[AI:Hybrid] ✓ Sucesso via ${selectedProvider.toUpperCase()} (${Date.now() - startTime}ms)`);
@@ -117,21 +134,21 @@ const executeHybridAI = async (messages, isJson = true, retries = 2) => {
 
     } catch (error) {
         const status = error.status || error.response?.status;
-        const errorMsg = error.message.toLowerCase();
+        const errorMsg = error.message ? error.message.toLowerCase() : '';
         const isRateLimit = status === 429 || errorMsg.includes('429') || errorMsg.includes('quota') || errorMsg.includes('too many');
 
-        if (isRateLimit) {
-            console.warn(`[AI:Hybrid] ⚠️ Rate Limit atingido no ${selectedProvider.toUpperCase()}. Alternando...`);
+        if (isRateLimit || error.name === 'APITimeoutError') {
+            console.warn(`[AI:Hybrid] ⚠️ ${error.name === 'APITimeoutError' ? 'Timeout' : 'Rate Limit'} no ${selectedProvider.toUpperCase()}. Alternando para o provedor reserva...`);
             if (selectedProvider === 'gemini') geminiCooldownUntil = Date.now() + COOLDOWN_TIME;
             if (selectedProvider === 'groq') groqCooldownUntil = Date.now() + COOLDOWN_TIME;
             primaryProvider = selectedProvider === 'gemini' ? 'groq' : 'gemini';
 
-            if (retries > 0) return executeHybridAI(messages, isJson, retries - 1);
+            if (retries > 0) return executeHybridAI(messages, isJson, retries - 1, timeoutMs);
         } else {
-            console.error(`[AI:Hybrid] ✗ Erro no ${selectedProvider.toUpperCase()}:`, error.message);
+            console.error(`[AI:Hybrid] ✗ Erro crítico no ${selectedProvider.toUpperCase()}:`, error.message);
             if (retries > 0) {
-                await delay(1500);
-                return executeHybridAI(messages, isJson, retries - 1);
+                await delay(1000);
+                return executeHybridAI(messages, isJson, retries - 1, timeoutMs);
             }
         }
         throw error;
@@ -142,7 +159,7 @@ const executeHybridAI = async (messages, isJson = true, retries = 2) => {
 // 📝 INSTRUÇÕES DE SISTEMA
 // ==========================================
 
-const SYSTEM_INSTRUCTION_ENEM = `Você é um Especialista Sênior em Elaboração de Questões do ENEM.
+const SYSTEM_INSTRUCTION_ENEM = `Você é um Especialista Sênior em Elaboração de Questões do ENEM. OBRIGATÓRIO: Retorne APENAS um objeto JSON válido.
 
 ATENÇÃO (DIRETRIZ RÍGIDA E INEGOCIÁVEL):
 - O array "options" DEVE conter 5 frases DESCRITIVAS COMPLETAS E LONGAS.
@@ -150,131 +167,118 @@ ATENÇÃO (DIRETRIZ RÍGIDA E INEGOCIÁVEL):
 - Escreva a frase de resposta DIRETAMENTE. Se a resposta for sobre feudalismo, escreva "O feudalismo causou impacto XYZ" em vez de "A) O feudalismo...".
 - Para Exatas/Natureza: Inclua OBRIGATORIAMENTE a unidade de medida (ex: "45 m/s", "10 Joules") na frase inteira.
 
-Seu retorno será lido por uma máquina. Qualquer letra solta ou formatação "A)" fará a questão ser corrompida.`;
+Seu retorno será lido por um sistema automatizado. Qualquer letra solta ou formatação "A)" fará a questão ser corrompida.`;
 
-const SYSTEM_INSTRUCTION_MAP = `Você é um Designer Instrucional e Professor Especialista em ENEM.
-Gere um MAPA MENTAL ESTRATÉGICO e VISUAL. Retorne APENAS o JSON.`;
+const SYSTEM_INSTRUCTION_ROADMAP = `Você é um Mentor Especialista em Preparação para o ENEM.
+Sua missão é gerar um ROADMAP (Trilha de Estudos) sequencial e lógico para o aluno.
+A trilha deve organizar O QUE estudar e em QUAL ORDEM estudar, do básico ao avançado.
+Retorne APENAS JSON estruturado, sem texto ou formatação fora do JSON.`;
 
 // ==========================================
-// 🚀 ENDPOINTS DA API (OTIMIZADOS COM EXECUÇÃO PARALELA)
+// 🚀 ENDPOINTS DA API
 // ==========================================
 
 /**
- * GERAÇÃO EM PARALELO (PROMISE.ALL) PARA VELOCIDADE MÁXIMA
- * Divide o pedido total em lotes e gera todos ao mesmo tempo.
+ * GERAÇÃO DE QUESTÕES COM CAP ABSOLUTO DE PERFORMANCE
+ * Garante que o servidor NUNCA dê timeout, limitando o peso da IA.
  */
-export const generateQuestionBatch = async (area, totalCount = 1, specificTopic, excludeTopics = [], isReviewErrors = false) => {
-    const BATCH_SIZE = 15; // Lote maior otimizado para o Gemini 2.5 Flash
-    const batchPromises = [];
+export const generateQuestionBatch = async (area, requestedCount = 1, specificTopic, excludeTopics = [], isReviewErrors = false) => {
+    // 🛡️ O SEGREDO DO SUCESSO: Trava absoluta de 5 questões por requisição.
+    // O Gemini gera 5 questões com perfeição em ~20 segundos.
+    // O seu Frontend vai receber essas 5, abrir a tela do usuário e pedir mais 5 em background.
+    const count = Math.min(requestedCount, 5); 
+
+    console.log(`[AI:Batch] Gerando pacote veloz de ${count} questões para ${area}...`);
+
+    const recentExcludes = excludeTopics.slice(-20);
+    const exclusionPrompt = recentExcludes.length > 0 ? ` Temas já gerados (NÃO REPITA): ${recentExcludes.join(', ')}.` : "";
     const areaLabel = area === 'Todas as Áreas' ? "diversas matérias do ENEM" : area;
 
-    console.log(`[AI:Batch] Iniciando geração PARALELA de ${totalCount} questões para ${area}...`);
-
-    // Prepara todas as promessas de requisição simultaneamente
-    for (let i = 0; i < totalCount; i += BATCH_SIZE) {
-        const count = Math.min(BATCH_SIZE, totalCount - i);
-        
-        // Criamos uma Promise para cada lote
-        const batchPromise = (async () => {
-            // Um pequeno delay escalonado (staggering) para não bater no limite de conexões simultâneas da API de uma vez só
-            await delay((i / BATCH_SIZE) * 400); 
-
-            let contentPrompt = "";
-            if (isReviewErrors) {
-                contentPrompt = `Gere ${count} questões ENEM sobre pegadinhas comuns em ${areaLabel}.`;
-            } else if (specificTopic && specificTopic.trim() !== "") {
-                contentPrompt = `Gere ${count} questões ENEM sobre "${specificTopic}".`;
-            } else {
-                contentPrompt = `Gere ${count} questões ENEM inéditas de ${areaLabel}. Variedade alta.`;
-            }
-
-            // O prompt força a injeção do texto no lugar da letra
-            const prompt = `${contentPrompt}
-            Retorne SOMENTE um JSON com a chave "questions" contendo um array de exatos ${count} objetos. Estrutura exigida:
-            { 
-              "stem": "Comando da questão", 
-              "context": "Texto de apoio completo", 
-              "options": [
-                "(ESCREVA A FRASE COMPLETA AQUI SEM A LETRA A)", 
-                "(ESCREVA A FRASE COMPLETA AQUI SEM A LETRA B)", 
-                "(ESCREVA A FRASE COMPLETA AQUI SEM A LETRA C)", 
-                "(ESCREVA A FRASE COMPLETA AQUI SEM A LETRA D)", 
-                "(ESCREVA A FRASE COMPLETA AQUI SEM A LETRA E)"
-              ], 
-              "correctIndex": 0, 
-              "subject": "Matéria", 
-              "area": "Área", 
-              "difficulty": "EASY|MEDIUM|HARD", 
-              "explanation": "Justificativa detalhada" 
-            }`;
-
-            const messages = [
-                { role: "system", content: SYSTEM_INSTRUCTION_ENEM },
-                { role: "user", content: prompt }
-            ];
-
-            let attempts = 0;
-            const maxAttempts = 3;
-
-            while (attempts < maxAttempts) {
-                try {
-                    const rawResponse = await executeHybridAI(messages, true);
-                    const content = parseSafeJSON(rawResponse);
-                    let parsedQuestions = content.questions || (Array.isArray(content) ? content : [content]);
-                    
-                    parsedQuestions = parsedQuestions.filter(q => q && q.stem);
-
-                    // FILTRO AGRESSIVO DE INTEGRIDADE
-                    const invalidQuestions = parsedQuestions.filter(q => {
-                        if (!q.options || q.options.length !== 5) return true;
-                        return q.options.some(opt => {
-                            if (typeof opt !== 'string') return true;
-                            // Se tirando os caracteres básicos sobrar menos de 10 letras, é lixo.
-                            const cleanText = opt.replace(/^[A-E][)\-\.\s=:]+/gi, '').trim();
-                            return cleanText.length < 10;
-                        });
-                    });
-
-                    if (invalidQuestions.length > 0) {
-                         console.warn(`[AI:Validation] Lote detectou alternativas vazias/preguiçosas. Recalculando...`);
-                         attempts++;
-                         if (attempts >= maxAttempts) throw new Error("A IA falhou na formatação.");
-                         continue;
-                    }
-
-                    // Força a limpeza das letras por Regex (caso a IA ainda tenha teimado)
-                    return parsedQuestions.map(q => ({
-                        ...q,
-                        options: q.options.map(opt => opt.replace(/^[A-E][)\-\.\s=:]+/gi, '').trim())
-                    }));
-
-                } catch (error) {
-                    console.error(`[AI:Batch Error] Tentativa ${attempts + 1} falhou:`, error.message);
-                    attempts++;
-                    if (attempts >= maxAttempts) return []; // Se o lote falhar 3x, retorna vazio para não quebrar o resto
-                }
-            }
-        })();
-        
-        batchPromises.push(batchPromise);
+    let contentPrompt = "";
+    if (isReviewErrors) {
+        contentPrompt = `Gere ${count} questões ENEM sobre pegadinhas comuns em ${areaLabel}.${exclusionPrompt}`;
+    } else if (specificTopic && specificTopic.trim() !== "") {
+        contentPrompt = `Gere ${count} questões ENEM sobre "${specificTopic}".${exclusionPrompt}`;
+    } else {
+        contentPrompt = `Gere ${count} questões ENEM inéditas de ${areaLabel}. Variedade alta.${exclusionPrompt}`;
     }
 
-    // Executa TODOS OS LOTES em Paralelo (Aqui é onde a velocidade acontece)
-    const resultsArrays = await Promise.all(batchPromises);
-    
-    // Achata o array de arrays em um único array de 180 questões
-    const allQuestions = resultsArrays.flat().filter(q => q !== undefined);
-    
-    console.log(`[AI:Batch] Concluído! Geradas ${allQuestions.length} questões totais em paralelo.`);
-    return allQuestions;
+    const prompt = `${contentPrompt}
+Retorne SOMENTE um JSON com a chave "questions" contendo um array de exatos ${count} objetos. Estrutura exigida:
+{ 
+  "stem": "Comando direto da questão", 
+  "context": "Texto de apoio completo, contendo os dados necessários", 
+  "options": [
+    "Descreva o primeiro cenário incorreto de forma completa e profunda", 
+    "Descreva o segundo cenário incorreto de forma completa e profunda", 
+    "Descreva o cenário correto e preciso de forma completa e profunda", 
+    "Descreva o terceiro cenário incorreto de forma completa e profunda", 
+    "Descreva o quarto cenário incorreto de forma completa e profunda"
+  ], 
+  "correctIndex": 2, 
+  "subject": "Matéria Específica", 
+  "area": "Área do conhecimento", 
+  "difficulty": "EASY|MEDIUM|HARD", 
+  "explanation": "Justificativa minuciosa do gabarito" 
+}`;
+
+    const messages = [
+        { role: "system", content: SYSTEM_INSTRUCTION_ENEM },
+        { role: "user", content: prompt }
+    ];
+
+    let attempts = 0;
+    const maxAttempts = 2; 
+
+    while (attempts < maxAttempts) {
+        try {
+            // Um timeout generoso de 30 segundos, que dá bastante margem para a IA gerar 5 questões.
+            const rawResponse = await executeHybridAI(messages, true, 1, 30000);
+            const content = parseSafeJSON(rawResponse);
+            let parsedQuestions = content.questions || (Array.isArray(content) ? content : [content]);
+            
+            parsedQuestions = parsedQuestions.filter(q => q && q.stem);
+
+            // FILTRO AGRESSIVO: Rejeita se as alternativas forem preguiçosas
+            const invalidQuestions = parsedQuestions.filter(q => {
+                if (!q.options || q.options.length !== 5) return true;
+                return q.options.some(opt => {
+                    if (typeof opt !== 'string') return true;
+                    const cleanText = opt.replace(/^[A-E][)\-\.\s=:]+/gi, '').trim();
+                    return cleanText.length < 10; 
+                });
+            });
+
+            if (invalidQuestions.length > 0) {
+                 console.warn(`[AI:Validation] Tentativa gerou alternativas inválidas ou curtas. Refazendo...`);
+                 attempts++;
+                 continue;
+            }
+
+            // LIMPEZA FORÇADA DAS LETRAS INICIAIS CASO TENHAM VAZADO
+            const cleanedQuestions = parsedQuestions.map(q => ({
+                ...q,
+                options: q.options.map(opt => opt.replace(/^[A-E][)\-\.\s=:]+/gi, '').trim())
+            }));
+
+            console.log(`[AI:Batch] Sucesso absoluto! ${cleanedQuestions.length} questões prontas e limpas.`);
+            return cleanedQuestions;
+
+        } catch (error) {
+            console.warn(`[AI:Batch] Tentativa ${attempts + 1} falhou: ${error.message}`);
+            attempts++;
+        }
+    }
+
+    throw new Error("Falha na geração de questões por excesso de carga nas IAs. Tente novamente em alguns segundos.");
 };
 
 export const analyzeSisuChances = async (score, desiredCourse, preferredUniversity) => {
     const prompt = `Aja como um especialista em SiSU. 
     Nota TRI: ${score}. Curso: "${desiredCourse}". Univ: "${preferredUniversity || 'Qualquer'}".
     Forneça 3 a 5 cenários. Retorne JSON array: [{ "university": "", "course": "", "cutOffScore": 0, "chance": "", "modality": "" }]`;
-    const messages = [{ role: "system", content: "Especialista em SiSU." }, { role: "user", content: prompt }];
-    const content = parseSafeJSON(await executeHybridAI(messages, true));
+    const messages = [{ role: "system", content: "Especialista em SiSU. Retorne APENAS um array JSON." }, { role: "user", content: prompt }];
+    const content = parseSafeJSON(await executeHybridAI(messages, true, 1, 10000));
     return Array.isArray(content) ? content : (content.scenarios || content.results || [content]);
 };
 
@@ -283,21 +287,21 @@ export const generateStudyPlan = async (results) => {
     const correctSubjects = results.filter(r => r.correct).map(r => r.subject);
     const prompt = `Erros: ${incorrects.join(', ')}. Acertos: ${correctSubjects.join(', ')}. 
     Forneça 4 recomendações de estudo. JSON array: [{ "topic": "", "area": "", "priority": "", "reason": "" }]`;
-    const messages = [{ role: "system", content: "Orientador Pedagógico ENEM." }, { role: "user", content: prompt }];
-    const content = parseSafeJSON(await executeHybridAI(messages, true));
+    const messages = [{ role: "system", content: "Orientador Pedagógico ENEM. Retorne APENAS um array JSON." }, { role: "user", content: prompt }];
+    const content = parseSafeJSON(await executeHybridAI(messages, true, 1, 10000));
     return Array.isArray(content) ? content : (content.recommendations || [content]);
 };
 
 export const generateEssayTheme = async () => {
     const prompt = `Gere tema de redação realista ENEM com 2 textos motivadores. JSON: { "title": "", "motivatingTexts": ["", ""] }`;
-    const messages = [{ role: "system", content: "Especialista em redação ENEM." }, { role: "user", content: prompt }];
-    return parseSafeJSON(await executeHybridAI(messages, true));
+    const messages = [{ role: "system", content: "Especialista em redação ENEM. Retorne APENAS um objeto JSON." }, { role: "user", content: prompt }];
+    return parseSafeJSON(await executeHybridAI(messages, true, 1, 20000));
 };
 
 export const evaluateEssay = async (theme, essayText) => {
     const prompt = `Corrija a redação sobre "${theme}": "${essayText}". Avalie 5 competências. JSON: { "totalScore": 0, "competencies": [{ "id": 1, "name": "...", "score": 0, "feedback": "" }...], "generalFeedback": "", "strengths": [], "weaknesses": [] }`;
-    const messages = [{ role: "system", content: "Corretor oficial do ENEM." }, { role: "user", content: prompt }];
-    const content = parseSafeJSON(await executeHybridAI(messages, true));
+    const messages = [{ role: "system", content: "Corretor oficial do ENEM. Retorne APENAS um objeto JSON." }, { role: "user", content: prompt }];
+    const content = parseSafeJSON(await executeHybridAI(messages, true, 1, 30000));
     if (content.competencies && Array.isArray(content.competencies)) {
       content.totalScore = content.competencies.reduce((acc, curr) => acc + (curr.score || 0), 0);
     }
@@ -306,14 +310,38 @@ export const evaluateEssay = async (theme, essayText) => {
 
 export const getGrade1000Example = async (theme) => {
     const prompt = `Gere Redação Nota 1000 sobre "${theme}" e comente as 5 competências. JSON: { "theme": "", "essayText": "", "comments": [] }`;
-    const messages = [{ role: "system", content: "Professor de Redação." }, { role: "user", content: prompt }];
-    return parseSafeJSON(await executeHybridAI(messages, true));
+    const messages = [{ role: "system", content: "Professor de Redação. Retorne APENAS um objeto JSON." }, { role: "user", content: prompt }];
+    return parseSafeJSON(await executeHybridAI(messages, true, 1, 30000));
 };
 
 export const generateStudyMap = async (subject, topic) => {
-    const prompt = `Mapa mental para ${subject} - ${topic || 'Geral'}. JSON: { "highIncidenceInfo": "", "centralNode": {}, "branches": [] }`;
-    const messages = [{ role: "system", content: SYSTEM_INSTRUCTION_MAP }, { role: "user", content: prompt }];
-    return parseSafeJSON(await executeHybridAI(messages, true));
+    const topicFocus = topic 
+        ? `Matéria: "${subject}". Foco específico: "${topic}".` 
+        : `Matéria: "${subject}". Visão Geral completa da disciplina para o ENEM.`;
+        
+    const prompt = `${topicFocus}
+    Crie um JSON estruturado de ROADMAP (Trilha de Aprendizagem) para o ENEM.
+    Formato OBRIGATÓRIO (Gere de 5 a 8 passos na ordem exata de estudo):
+    {
+      "title": "Trilha de Domínio: Nome da Matéria/Tópico",
+      "overview": "Resumo de 2 linhas sobre como dominar esse assunto para a prova.",
+      "roadmap": [
+        {
+          "step": 1,
+          "title": "Nome do Módulo (ex: Matemática Básica)",
+          "description": "Breve explicação do porquê começar por aqui",
+          "importance": "ALTA",
+          "subtopics": ["Subtópico 1", "Subtópico 2", "Subtópico 3"]
+        }
+      ]
+    }`;
+
+    const messages = [
+        { role: "system", content: SYSTEM_INSTRUCTION_ROADMAP }, 
+        { role: "user", content: prompt }
+    ];
+    
+    return parseSafeJSON(await executeHybridAI(messages, true, 1, 20000));
 };
 
 export const getChatResponse = async (history, newMessage) => {
@@ -322,5 +350,5 @@ export const getChatResponse = async (history, newMessage) => {
         ...history.map(msg => ({ role: msg.role === 'user' ? 'user' : 'assistant', content: msg.text })),
         { role: "user", content: newMessage }
     ];
-    return await executeHybridAI(messages, false);
+    return await executeHybridAI(messages, false, 1, 15000);
 };

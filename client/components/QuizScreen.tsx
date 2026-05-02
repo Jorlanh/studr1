@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { AppView } from '../types';
 import { useNavigation } from '../contexts/NavigationContext';
 import { usePractice, PRACTICE_LOADING_STEPS } from '../contexts/PracticeContext';
@@ -13,13 +13,30 @@ export default function QuizScreen() {
   const practice = usePractice();
   const mock = useMock();
 
+  // Estado novo para o Loading ao clicar em Finalizar
+  const [isFinalizing, setIsFinalizing] = useState(false);
+
   // Pull session state from whichever context is active
   const questions = isMock ? mock.questions : practice.questions;
   const userAnswers = isMock ? mock.userAnswers : practice.userAnswers;
   const currentQuestionIndex = isMock ? mock.currentQuestionIndex : practice.currentQuestionIndex;
   const loading = isMock ? mock.loading : practice.loading;
   const handleAnswerSelect = isMock ? mock.handleAnswerSelect : practice.handleAnswerSelect;
-  const handleNext = isMock ? mock.handleNext : practice.handleNext;
+  
+  // Custom HandleNext para injetar o Loader de Finalização
+  const handleNext = async () => {
+      const targetCount = isMock ? mock.simuladoTargetCount : 0;
+      const isFinished = isMock && (currentQuestionIndex + 1 >= targetCount || mock.isTimeUp);
+
+      if (isFinished) {
+          setIsFinalizing(true); // Trava a tela
+          await mock.handleNext(); // Manda pro backend calcular o TRI
+          setIsFinalizing(false); // Libera a tela (embora já vá ter mudado de rota)
+      } else {
+          isMock ? await mock.handleNext() : await practice.handleNext();
+      }
+  };
+
   const handlePrevious = isMock ? mock.handlePrevious : practice.handlePrevious;
   const cancelAction = isMock ? mock.cancelMock : practice.cancelPractice;
 
@@ -139,7 +156,7 @@ export default function QuizScreen() {
           <div className="w-full md:w-auto flex justify-between md:justify-start gap-4 order-2 md:order-1">
             <Button
               onClick={handlePrevious}
-              disabled={currentQuestionIndex === 0}
+              disabled={currentQuestionIndex === 0 || isFinalizing}
               className={`w-1/2 md:w-auto border-gray-200 dark:border-slate-700 ${currentQuestionIndex === 0 ? 'invisible' : ''}`}
               variant="outline"
             >
@@ -166,11 +183,16 @@ export default function QuizScreen() {
 
           <Button
             onClick={handleNext}
-            disabled={isLastLoaded && loading}
+            disabled={(isLastLoaded && loading) || isFinalizing}
             className="w-full md:w-auto shadow-xl order-1 md:order-3 hover:scale-105 transition-transform"
             variant="primary"
           >
-            {loading && isLastLoaded ? (
+            {isFinalizing ? (
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                Calculando Nota TRI...
+              </div>
+            ) : loading && isLastLoaded ? (
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                 Expandindo...

@@ -6,30 +6,32 @@ import { usePractice } from '../contexts/PracticeContext';
 import { useMock } from '../contexts/MockContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { useUI } from '../contexts/UIContext';
-import { Button, Card, Badge } from './UIComponents';
+import { Button, Badge } from './UIComponents';
 import Logo from './Logo';
 import { SUBJECT_AREAS, SPECIFIC_SUBJECTS } from '../constants';
 
-const LockedCard = ({ children, onClick, title, icon }: any) => (
-  <Card
-    onClick={onClick}
-    className="relative group transition-all duration-300 border-t-4 border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50 grayscale hover:grayscale-0 cursor-pointer overflow-hidden"
+const BentoCard = ({ children, className = '', locked = false, onLockedClick }: any) => (
+  <div 
+    onClick={locked ? onLockedClick : undefined}
+    className={`relative group rounded-3xl p-6 transition-all duration-300 overflow-hidden ${locked ? 'cursor-pointer' : ''} ${className}`}
   >
-    <div className="absolute inset-0 bg-white/40 dark:bg-slate-900/60 backdrop-blur-[2px] z-10 flex flex-col items-center justify-center p-6 text-center opacity-100 group-hover:backdrop-blur-none transition-all">
-      <div className="w-12 h-12 bg-white dark:bg-slate-800 rounded-full shadow-lg flex items-center justify-center mb-3 transform group-hover:scale-110 transition-transform">
-        <span className="text-2xl">🔒</span>
-      </div>
-      <h3 className="font-bold text-slate-800 dark:text-white text-lg">Plano Premium</h3>
-      <p className="text-[10px] text-slate-600 dark:text-slate-400 font-medium">Clique para liberar esta ferramenta</p>
+    {/* Glassmorphism Background */}
+    <div className={`absolute inset-0 transition-opacity duration-300 ${locked ? 'bg-slate-200/80 dark:bg-slate-900/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center' : 'bg-white/80 dark:bg-slate-800/80 backdrop-blur-md shadow-xl border border-slate-100 dark:border-slate-700/50 hover:shadow-2xl hover:-translate-y-1'}`}>
+        {locked && (
+            <div className="text-center opacity-100 transform group-hover:scale-110 transition-transform">
+                <div className="w-14 h-14 bg-white dark:bg-slate-800 rounded-full shadow-lg flex items-center justify-center mx-auto mb-3">
+                    <span className="text-2xl">🔒</span>
+                </div>
+                <h3 className="font-bold text-slate-800 dark:text-white text-lg">Premium</h3>
+                <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mt-1">Desbloquear acesso</p>
+            </div>
+        )}
     </div>
-    <div className="opacity-40">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="text-4xl">{icon}</div>
-        <h2 className="text-xl font-bold text-gray-800 dark:text-slate-100">{title}</h2>
-      </div>
-      {children}
+    
+    <div className={`relative z-10 h-full flex flex-col ${locked ? 'opacity-30 grayscale blur-[2px]' : ''}`}>
+        {children}
     </div>
-  </Card>
+  </div>
 );
 
 export default function HomeView() {
@@ -52,250 +54,197 @@ export default function HomeView() {
     return lastMockDate.getMonth() === now.getMonth() && lastMockDate.getFullYear() === now.getFullYear();
   };
 
-  const handleLockedClick = () => openPricing();
-
   return (
-    <div className="max-w-7xl mx-auto pt-12 px-4 animate-fade-in pb-12">
-      <div className="text-center mb-16 flex flex-col items-center">
-        <Logo className="h-20 md:h-24 mb-6" />
-        <p className="text-xl text-gray-600 dark:text-slate-400 max-w-2xl mx-auto">
-          Sua preparação completa impulsionada por Inteligência Artificial.
-          Questões, simulados, notas TRI e <strong>correção de redação</strong>.
+    <div className="max-w-7xl mx-auto pt-10 px-4 animate-fade-in pb-20">
+      
+      {/* Header Moderno */}
+      <div className="flex flex-col items-center text-center mb-12">
+        <Logo className="h-16 md:h-20 mb-8 transform hover:scale-105 transition-transform" />
+        <h1 className="text-4xl md:text-5xl font-black text-slate-800 dark:text-white tracking-tight mb-4">
+          O Seu Futuro <span className="text-transparent bg-clip-text bg-gradient-to-r from-enem-blue to-purple-600">Aprovado.</span>
+        </h1>
+        <p className="text-lg md:text-xl text-slate-500 dark:text-slate-400 max-w-2xl">
+          A única plataforma inteligente que calibra seus estudos com a verdadeira <strong className="text-slate-700 dark:text-slate-200">Teoria de Resposta ao Item (TRI)</strong>.
         </p>
         {isMockOnly && (
-          <Badge color="yellow" className="mt-4 px-4 py-1.5 text-sm">
-            ✨ Assinante Simulado (1 por mês)
+          <Badge color="yellow" className="mt-6 px-5 py-2 text-sm shadow-sm backdrop-blur-md bg-yellow-500/10 border border-yellow-500/20">
+            ✨ Assinante Simulado Mensal
           </Badge>
         )}
       </div>
 
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-12">
-        {/* Card 1: Gerador Infinito */}
-        {(isPremium || isTrial) ? (
-          <Card className="hover:shadow-lg transition-shadow border-t-4 border-enem-blue cursor-pointer group flex flex-col md:col-span-1 xl:col-span-1">
-            <div className="flex-1 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="text-4xl group-hover:scale-110 transition-transform duration-200">♾️</div>
-                  <h2 className="text-xl font-bold text-gray-800 dark:text-slate-100">Gerador Infinito</h2>
-                </div>
-                <p className="text-gray-500 dark:text-slate-400 mb-4 text-xs">
-                  Pratique sem parar. Escolha uma matéria específica ou deixe a IA desafiar você.
-                </p>
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        placeholder="Tópico..."
-                        value={specificTopicInput}
-                        onChange={(e) => setSpecificTopicInput(e.target.value)}
-                        className="w-full border dark:border-slate-700 p-1.5 rounded text-xs focus:ring-2 focus:ring-enem-blue focus:outline-none bg-white dark:bg-slate-800 dark:text-white"
-                      />
-                      <Button
-                        variant="primary"
-                        onClick={() => startPractice(AreaOfKnowledge.MIXED, specificTopicInput)}
-                        disabled={!specificTopicInput}
-                        className="px-2 py-1 text-xs"
-                      >
-                        Ir
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {SPECIFIC_SUBJECTS.map((subject) => (
-                      <button
-                        key={subject.name}
-                        disabled={practiceLoading}
-                        onClick={() => startPractice(subject.area, subject.name)}
-                        className="px-2 py-0.5 text-[10px] font-medium bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-100 dark:border-blue-800/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {subject.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </Card>
-        ) : (
-          <LockedCard title="Gerador Infinito" icon="♾️" onClick={handleLockedClick}>
-            <div className="space-y-2">
-              <p className="text-gray-500 dark:text-slate-400 text-xs">Pratique com questões ilimitadas geradas por IA.</p>
-              <Badge color="blue" className="text-[8px]">Plano Premium</Badge>
-            </div>
-          </LockedCard>
-        )}
+      {/* Bento Grid Layout */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-6 auto-rows-[minmax(180px,auto)]">
 
-        {/* Card 2: Simulado */}
-        {(isPremium || isMockOnly || isTrial) ? (
-          <Card className="hover:shadow-lg transition-shadow border-t-4 border-enem-yellow cursor-pointer relative overflow-hidden flex flex-col md:col-span-1 xl:col-span-1">
-            <div className="absolute top-0 right-0 bg-enem-yellow text-[10px] font-bold px-2 py-1 rounded-bl">OFICIAL</div>
-            <div className="flex-1 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="text-4xl">⏱️</div>
-                  <h2 className="text-xl font-bold text-gray-800 dark:text-slate-100">Simulado</h2>
+        {/* Bloco 1: SIMULADO (Destaque Principal - Span 8 colunas) */}
+        <BentoCard 
+          className="md:col-span-8 md:row-span-2 bg-gradient-to-br from-slate-50 to-blue-50/50 dark:from-slate-900 dark:to-blue-900/10"
+          locked={!(isPremium || isMockOnly || isTrial)}
+          onLockedClick={openPricing}
+        >
+          <div className="flex justify-between items-start mb-6">
+             <div>
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="text-4xl bg-white dark:bg-slate-800 p-3 rounded-2xl shadow-sm">⏱️</span>
+                  <h2 className="text-2xl font-black text-slate-800 dark:text-white">Simulado Oficial</h2>
                 </div>
-                <p className="text-gray-500 dark:text-slate-400 mb-6 text-xs">
-                  {isMockOnly ? 'Plano Simulado Mensal: 1 tentativa por mês com correção TRI.' : 'Experiência real com cronômetro, 180 questões e cálculo TRI.'}
+                <p className="text-slate-500 dark:text-slate-400 text-sm max-w-md">
+                  {isMockOnly ? 'Plano Mensal: 1 tentativa por mês com calibração TRI.' : 'Experiência real com 180 questões e cálculo TRI avançado.'}
                 </p>
-                <div className="space-y-3">
-                  <Button
-                    onClick={() => startSimulado('FULL')}
-                    disabled={mockLoading || (isMockOnly && hasTakenMockThisMonth())}
-                    variant="primary"
-                    className="w-full text-xs py-2"
-                  >
-                    {mockLoading ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        Gerando...
-                      </span>
-                    ) : isMockOnly && hasTakenMockThisMonth() ? '🔄 Usado este mês' : (isTrial ? '⏱️ Simulado Rápido' : '🏆 Completo (180q)')}
-                  </Button>
-                  <div className="grid grid-cols-2 gap-2">
-                    {SUBJECT_AREAS.map(area => (
-                      <button
-                        key={area.id}
-                        disabled={mockLoading || (isMockOnly && hasTakenMockThisMonth())}
-                        onClick={() => startSimulado('AREA', area.id)}
-                        className="p-1 text-[10px] bg-slate-50 dark:bg-slate-800/50 hover:bg-yellow-50 dark:hover:bg-yellow-900/20 border border-slate-200 dark:border-slate-700 rounded text-center truncate dark:text-slate-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {area.name}
-                      </button>
-                    ))}
-                  </div>
-                  {isMockOnly && hasTakenMockThisMonth() && (
-                    <p className="text-[9px] text-center text-red-500 font-bold mt-1">Refazer somente no próximo mês.</p>
-                  )}
+             </div>
+             <Badge color="blue" className="hidden md:flex">Padrão ENEM</Badge>
+          </div>
+
+          <div className="mt-auto space-y-4">
+             <Button
+                onClick={() => startSimulado('FULL')}
+                disabled={mockLoading || (isMockOnly && hasTakenMockThisMonth())}
+                className="w-full text-sm md:text-base py-4 font-bold bg-enem-blue hover:bg-blue-700 text-white shadow-lg shadow-blue-500/30 transition-all hover:-translate-y-0.5"
+              >
+                {mockLoading ? 'Calibrando IA...' : isMockOnly && hasTakenMockThisMonth() ? '🔄 Limite Mensal Atingido' : (isTrial ? '⏱️ Iniciar Simulado Rápido' : '🏆 Iniciar Simulado Completo (180q)')}
+             </Button>
+
+             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {SUBJECT_AREAS.map(area => (
                   <button
-                    onClick={() => navigate(AppView.EXAM_HISTORY)}
-                    className="w-full text-[10px] text-slate-400 dark:text-slate-500 hover:text-enem-blue dark:hover:text-blue-400 mt-1 underline text-center transition-colors"
+                    key={area.id}
+                    disabled={mockLoading || (isMockOnly && hasTakenMockThisMonth())}
+                    onClick={() => startSimulado('AREA', area.id)}
+                    className="p-3 text-[11px] md:text-xs font-bold bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl text-center text-slate-600 dark:text-slate-300 transition-colors shadow-sm"
                   >
-                    📋 Ver histórico de simulados
+                    {area.name}
                   </button>
-                </div>
-              </div>
-            </div>
-          </Card>
-        ) : (
-          <LockedCard title="Simulado" icon="⏱️" onClick={handleLockedClick}>
-            <p className="text-gray-500 dark:text-slate-400 mb-6 text-xs">
-              Acesso aos simulados oficiais com cálculo TRI profissional.
-            </p>
-          </LockedCard>
-        )}
+                ))}
+             </div>
+             
+             <div className="flex justify-end mt-2">
+                <button onClick={() => navigate(AppView.EXAM_HISTORY)} className="text-xs font-bold text-slate-400 hover:text-enem-blue transition-colors">
+                  Ver meu histórico completo →
+                </button>
+             </div>
+          </div>
+        </BentoCard>
 
-        {/* Card 3: Redação IA */}
-        {isPremium ? (
-          <Card className="hover:shadow-lg transition-shadow border-t-4 border-pink-500 cursor-pointer flex flex-col md:col-span-1 xl:col-span-1">
-            <div className="flex-1 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="text-4xl">📝</div>
-                  <h2 className="text-xl font-bold text-gray-800 dark:text-slate-100">Redação IA</h2>
-                </div>
-                <p className="text-gray-500 dark:text-slate-400 mb-6 text-xs">
-                  Correção oficial por competência ou modelos nota 1000.
-                </p>
-                <div className="space-y-2">
-                  <Button
-                    onClick={() => navigate(AppView.ESSAY)}
-                    variant="primary"
-                    className="w-full bg-pink-600 hover:bg-pink-700 text-sm py-1.5"
-                  >
-                    Escrever Redação
-                  </Button>
-                  <Button
-                    onClick={() => navigate(AppView.ESSAY_BANK)}
-                    variant="outline"
-                    className="w-full text-xs py-1.5 border-pink-200 dark:border-pink-900/50 text-pink-700 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-950/30 transition-colors"
-                  >
-                    Banco Nota 1000
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </Card>
-        ) : (
-          <LockedCard title="Redação IA" icon="📝" onClick={handleLockedClick}>
-            <p className="text-gray-500 dark:text-slate-400 mb-6 text-xs">
-              Correção imediata e banco de redações nota 1000.
-            </p>
-          </LockedCard>
-        )}
+        {/* Bloco 2: EVOLUÇÃO (Span 4 colunas) */}
+        <BentoCard 
+          className="md:col-span-4 md:row-span-1 bg-gradient-to-br from-purple-50 to-white dark:from-purple-900/10 dark:to-slate-900"
+          locked={!(isPremium || isTrial)}
+          onLockedClick={openPricing}
+        >
+          <div className="flex items-center gap-3 mb-4">
+             <span className="text-3xl bg-white dark:bg-slate-800 p-2.5 rounded-xl shadow-sm">🎮</span>
+             <h2 className="text-xl font-black text-slate-800 dark:text-white">Seu Nível</h2>
+          </div>
+          <div className="flex flex-col items-center justify-center bg-white dark:bg-slate-800 rounded-2xl py-4 border border-slate-100 dark:border-slate-700 shadow-sm mb-4">
+             <span className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-indigo-600">{navLevel}</span>
+             <span className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">{navXp} XP Acumulados</span>
+          </div>
+          <Button onClick={() => navigate(AppView.GAMIFICATION)} variant="outline" className="w-full text-xs font-bold py-2 border-purple-200 text-purple-700 dark:border-purple-800 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30">
+            Ver Ranking Completo
+          </Button>
+        </BentoCard>
 
-        {/* Card 4: Mapa de Estudos */}
-        {(isPremium || isTrial) ? (
-          <Card className="hover:shadow-lg transition-shadow border-t-4 border-green-500 cursor-pointer flex flex-col md:col-span-1 xl:col-span-1">
-            <div className="flex-1 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="text-4xl">🗺️</div>
-                  <h2 className="text-xl font-bold text-gray-800 dark:text-slate-100">Mapa de Estudos</h2>
-                </div>
-                <p className="text-gray-500 dark:text-slate-400 mb-6 text-xs">
-                  Trilhas estratégicas, mapas mentais e resumos visuais.
-                </p>
-                <Button
-                  onClick={() => navigate(AppView.STUDY_GUIDE)}
-                  variant="primary"
-                  className="w-full bg-green-600 hover:bg-green-700 text-sm"
-                >
-                  Gerar Mapa
+        {/* Bloco 3: TUTOR IA (Span 4 colunas) */}
+        <BentoCard 
+          className="md:col-span-4 md:row-span-1 bg-slate-900 text-white"
+          locked={!isPremium}
+          onLockedClick={openPricing}
+        >
+          <div className="flex items-center gap-3 mb-3">
+             <span className="text-3xl bg-white/10 p-2.5 rounded-xl">🤖</span>
+             <h2 className="text-xl font-black text-white">Tutor 24h</h2>
+          </div>
+          <p className="text-slate-400 text-xs mb-auto pb-4">Resolva dúvidas de exatas ou humanas instantaneamente.</p>
+          <Button onClick={() => setChatOpen(true)} className="w-full text-xs font-bold py-3 bg-white text-slate-900 hover:bg-slate-100 shadow-xl">
+            Chamar Tutor Agora
+          </Button>
+        </BentoCard>
+
+        {/* Bloco 4: REDAÇÃO IA (Span 6 colunas) */}
+        <BentoCard 
+          className="md:col-span-6 md:row-span-2 bg-gradient-to-br from-pink-50 to-rose-50/30 dark:from-pink-900/10 dark:to-slate-900"
+          locked={!isPremium}
+          onLockedClick={openPricing}
+        >
+          <div className="flex items-center gap-3 mb-4">
+             <span className="text-4xl bg-white dark:bg-slate-800 p-3 rounded-2xl shadow-sm">📝</span>
+             <h2 className="text-2xl font-black text-slate-800 dark:text-white">Redação IA</h2>
+          </div>
+          <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+            Treine com temas atualizados e receba correção técnica focada nas 5 competências do MEC.
+          </p>
+          
+          <div className="mt-auto flex flex-col gap-3">
+             <Button onClick={() => navigate(AppView.ESSAY)} className="w-full text-sm py-4 font-bold bg-pink-600 hover:bg-pink-700 text-white shadow-lg shadow-pink-500/20">
+                ✍️ Escrever Nova Redação
+             </Button>
+             <Button onClick={() => navigate(AppView.ESSAY_BANK)} variant="outline" className="w-full text-sm py-3 font-bold border-pink-200 text-pink-700 dark:border-pink-800 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-900/20">
+                📚 Ler Modelos Nota 1000
+             </Button>
+          </div>
+        </BentoCard>
+
+        {/* Bloco 5: GERADOR INFINITO (Span 6 colunas) */}
+        <BentoCard 
+          className="md:col-span-6 md:row-span-2"
+          locked={!(isPremium || isTrial)}
+          onLockedClick={openPricing}
+        >
+          <div className="flex items-center gap-3 mb-4">
+             <span className="text-4xl bg-slate-50 dark:bg-slate-800 p-3 rounded-2xl shadow-sm">♾️</span>
+             <h2 className="text-2xl font-black text-slate-800 dark:text-white">Prática Infinita</h2>
+          </div>
+          <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+             Digite um assunto ou escolha uma matéria para gerar listas de exercícios infinitas sob medida.
+          </p>
+          
+          <div className="mt-auto space-y-4">
+             <div className="flex gap-2">
+                <input
+                   type="text"
+                   placeholder="Ex: Revolução Industrial..."
+                   value={specificTopicInput}
+                   onChange={(e) => setSpecificTopicInput(e.target.value)}
+                   className="w-full border border-slate-200 dark:border-slate-700 p-3 rounded-xl text-sm focus:ring-2 focus:ring-enem-blue focus:border-transparent bg-slate-50 dark:bg-slate-800 dark:text-white transition-all shadow-inner"
+                />
+                <Button onClick={() => startPractice(AreaOfKnowledge.MIXED, specificTopicInput)} disabled={!specificTopicInput} variant="primary" className="px-6 py-3 font-bold">
+                   Gerar
                 </Button>
-              </div>
-            </div>
-          </Card>
-        ) : (
-          <LockedCard title="Mapa de Estudos" icon="🗺️" onClick={handleLockedClick}>
-            <p className="text-gray-500 dark:text-slate-400 mb-6 text-xs">
-              Visualize seu progresso com mapas mentais gerados por IA.
-            </p>
-          </LockedCard>
-        )}
+             </div>
+             
+             <div className="flex flex-wrap gap-2 pt-2">
+                {SPECIFIC_SUBJECTS.map((subject) => (
+                   <button
+                      key={subject.name}
+                      disabled={practiceLoading}
+                      onClick={() => startPractice(subject.area, subject.name)}
+                      className="px-3 py-1.5 text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                   >
+                      {subject.name}
+                   </button>
+                ))}
+             </div>
+          </div>
+        </BentoCard>
 
-        {/* Card 5: Evolução / Gamificação */}
-        {(isPremium || isTrial) ? (
-          <Card className="hover:shadow-lg transition-shadow border-t-4 border-purple-600 cursor-pointer flex flex-col md:col-span-1 xl:col-span-1">
-            <div className="flex-1 flex flex-col justify-between">
+        {/* Bloco 6: MAPA MENTAL (Span 12 colunas) */}
+        <BentoCard 
+          className="md:col-span-12 md:row-span-1 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/10 dark:to-teal-900/10 flex flex-col md:flex-row items-center justify-between gap-6"
+          locked={!(isPremium || isTrial)}
+          onLockedClick={openPricing}
+        >
+           <div className="flex items-center gap-4">
+              <span className="text-5xl drop-shadow-sm">🗺️</span>
               <div>
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="text-4xl">🎮</div>
-                  <h2 className="text-xl font-bold text-gray-800 dark:text-slate-100">Evolução</h2>
-                </div>
-                <p className="text-gray-500 dark:text-slate-400 mb-6 text-xs">
-                  {isPremium ? 'Acompanhe seu nível e converse com o Tutor IA.' : 'Acompanhe seu nível e ranking no Trial.'}
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    onClick={() => navigate(AppView.GAMIFICATION)}
-                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-[10px] py-1 px-1"
-                  >
-                    Ranking
-                  </Button>
-                  <Button
-                    onClick={() => isPremium ? setChatOpen(true) : handleLockedClick()}
-                    variant={isPremium ? 'primary' : 'outline'}
-                    className={`w-full text-[10px] py-1 px-1 ${isPremium ? 'bg-purple-600 hover:bg-purple-700' : 'border-purple-200 dark:border-purple-800 text-purple-600 dark:text-purple-400'}`}
-                  >
-                    {isPremium ? 'Tutor IA' : '🔒 Tutor'}
-                  </Button>
-                </div>
-                <div className="mt-3 text-center text-xs font-bold text-indigo-800 dark:text-indigo-300">
-                  Nível {navLevel} • {navXp} XP
-                </div>
+                 <h2 className="text-xl font-black text-slate-800 dark:text-white">Mapas Mentais Inteligentes</h2>
+                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Conecte os pontos e revise conceitos visualmente antes da prova.</p>
               </div>
-            </div>
-          </Card>
-        ) : (
-          <LockedCard title="Evolução" icon="🎮" onClick={handleLockedClick}>
-            <p className="text-gray-500 dark:text-slate-400 mb-6 text-xs">
-              Gamificação completa e tutor 24h para tirar dúvidas.
-            </p>
-          </LockedCard>
-        )}
+           </div>
+           <Button onClick={() => navigate(AppView.STUDY_GUIDE)} className="w-full md:w-auto px-8 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-lg shadow-emerald-500/20">
+              Gerar Mapa de Estudo
+           </Button>
+        </BentoCard>
+
       </div>
     </div>
   );
