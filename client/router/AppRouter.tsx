@@ -317,19 +317,22 @@ export function AppRouter() {
         <TowerView 
            onBack={() => navigate(AppView.HOME)} 
            onBattleStart={(floor) => {
+              // Salva a configuração do andar na sessão
               sessionStorage.setItem('studr_current_tower_floor', JSON.stringify({
                  id: floor.id, targetScore: floor.targetScore, floorNumber: floor.floorNumber, type: floor.type
               }));
 
               if (floor.type === 'ESSAY') {
+                 // É o Chefão: Vai pra tela de redação, passando o tema exato da torre
                  sessionStorage.setItem('studr_tower_essay_theme', floor.topic);
                  navigate(AppView.ESSAY);
               } else {
-                 sessionStorage.setItem('studr_exam_mode', 'TOWER'); 
+                 // É um Andar Normal: Usa a Geração Rápida da IA (5 questões do Tópico do andar)
+                 sessionStorage.setItem('studr_exam_mode', 'TOWER');
                  
-                 // O SEGREDO DO LIMITE: Em vez de startPractice, iniciamos um Mock!
-                 // O seu startSimulado cria uma prova limitada com fim definido (botão finalizar).
-                 startSimulado('AREA', floor.area); 
+                 // Chame o motor de prática da IA, mas ele vai identificar o modo TOWER 
+                 // e montar uma prova com limite exato para a avaliação final de estrelas.
+                 startPractice(floor.area, floor.topic, false); 
               }
            }} 
         />

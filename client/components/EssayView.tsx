@@ -406,7 +406,7 @@ const EssayView: React.FC<EssayViewProps> = ({ onBack, onSuccess }) => {
           </div>
 
           <div className="grid lg:grid-cols-12 gap-8">
-             <div className="lg:col-span-8">
+             <div className="lg:col-span-7">
                 <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden relative">
                    {/* Paper Texture Overlay */}
                    <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/notebook.png')]"></div>
@@ -423,23 +423,55 @@ const EssayView: React.FC<EssayViewProps> = ({ onBack, onSuccess }) => {
                 </div>
              </div>
 
-             <div className="lg:col-span-4 space-y-6">
+             <div className="lg:col-span-5 space-y-6">
                 <h4 className="font-black text-slate-400 dark:text-slate-500 uppercase text-[10px] tracking-[0.2em] px-2 flex items-center gap-2">
-                   <span className="w-1.5 h-1.5 rounded-full bg-enem-blue"></span>
-                   Por que esta redação é 1000?
+                   <span className="text-lg">🔍</span>
+                   Por que esta redação tirou 1000?
                 </h4>
+                
                 <div className="space-y-4">
-                   {example1000.comments.map((comment: any, idx: number) => (
-                      <div key={idx} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm hover:scale-[1.02] transition-transform">
-                         <span className="font-black text-enem-blue dark:text-blue-400 uppercase text-[10px] block mb-2 tracking-widest">Comp. {comment.competencyId}</span>
-                         <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed font-medium">{comment.justification}</p>
-                      </div>
-                   ))}
+                   {/* Fallback de array para garantir que sempre mostre as 5 competências */}
+                   {(example1000.comments?.length === 5 ? example1000.comments : Array(5).fill({})).map((comment: any, idx: number) => {
+                      const compId = (idx + 1);
+                      // Dicionário Oficial do ENEM
+                      const competenciasDesc: any = {
+                          1: { name: "Domínio da Norma Padrão", desc: "Demonstrar domínio da modalidade escrita formal da Língua Portuguesa." },
+                          2: { name: "Compreensão e Repertório", desc: "Compreender a proposta e aplicar conceitos das várias áreas de conhecimento." },
+                          3: { name: "Organização e Argumentação", desc: "Selecionar, relacionar, organizar e interpretar informações em defesa de um ponto de vista." },
+                          4: { name: "Coesão e Conectivos", desc: "Demonstrar conhecimento dos mecanismos linguísticos necessários para a argumentação." },
+                          5: { name: "Proposta de Intervenção", desc: "Elaborar proposta de intervenção para o problema respeitando os direitos humanos." }
+                      };
+                      
+                      const compData = competenciasDesc[compId];
+                      const justificativa = comment.justification || comment.feedback || `O texto atende perfeitamente aos requisitos da Competência ${compId}, garantindo a nota máxima.`;
+
+                      return (
+                         <div key={idx} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm hover:scale-[1.02] transition-transform">
+                            <div className="flex justify-between items-start mb-2">
+                                <div>
+                                   <span className="font-black text-enem-blue dark:text-blue-400 uppercase text-[10px] block tracking-widest">
+                                     Competência {compId}
+                                   </span>
+                                   <h5 className="font-bold text-slate-800 dark:text-slate-200 text-sm mt-1 leading-tight">{compData.name}</h5>
+                                </div>
+                                <Badge color="green" className="text-[10px] bg-green-100 text-green-700 whitespace-nowrap border-green-200">200 pts</Badge>
+                            </div>
+                            
+                            <p className="text-[11px] text-slate-400 mb-3 italic leading-relaxed">{compData.desc}</p>
+                            
+                            <div className="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-xl border border-blue-100 dark:border-blue-900/20">
+                               <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
+                                 {justificativa}
+                               </p>
+                            </div>
+                         </div>
+                      );
+                   })}
                 </div>
                 
                 <div className="p-6 bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-900/20 dark:to-blue-900/20 rounded-3xl border border-blue-100 dark:border-blue-800/30 text-center">
-                   <p className="text-xs text-blue-700 dark:text-blue-300 font-bold leading-relaxed">
-                      "Utilize este modelo como referência de estrutura e repertório para suas próximas produções."
+                   <p className="text-xs text-blue-700 dark:text-blue-300 font-bold leading-relaxed uppercase tracking-widest">
+                      Utilize este modelo como referência de estrutura.
                    </p>
                 </div>
              </div>

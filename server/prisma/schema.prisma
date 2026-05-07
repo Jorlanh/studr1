@@ -8,10 +8,11 @@ datasource db {
 }
 
 model User {
-  id                    String            @id @default(cuid())
+  id                    String            @id @default(uuid())
   email                 String            @unique
   name                  String?
   password              String
+  currentSessionId      String?
   isVerified            Boolean           @default(false)
   verificationCode      String?
   trialEndsAt           DateTime          @default(now())

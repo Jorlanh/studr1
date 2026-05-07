@@ -1,9 +1,8 @@
-
 import React, { useState } from 'react';
 import { ESSAY_MODEL_THEMES } from '../constants';
 import { getGrade1000Example } from '../services/aiClientService';
 import { Grade1000Example } from '../types';
-import { Button, Card, LoadingSpinner, Badge } from './UIComponents';
+import { Button, LoadingSpinner, Badge } from './UIComponents';
 
 interface EssayModelBankProps {
   onBack: () => void;
@@ -101,37 +100,59 @@ const EssayModelBank: React.FC<EssayModelBankProps> = ({ onBack }) => {
                           <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/notebook.png')]"></div>
                           
                           <div className="font-serif text-lg md:text-xl text-slate-800 dark:text-slate-200 p-8 md:p-12 leading-[2.2] whitespace-pre-wrap select-none italic relative z-10 border-l-[3.5rem] border-slate-50 dark:border-slate-800/50">
-                             {/* Simulated Lines */}
-                              <div className="absolute left-[-3.5rem] top-0 bottom-0 w-full pointer-events-none opacity-10">
-                                 {Array.from({length: 40}).map((_, i) => (
-                                    <div key={i} className="h-[2.2em] border-b border-slate-400 dark:border-slate-600 flex items-center pl-4 text-[9px] font-mono text-slate-600 dark:text-slate-400">{(i+1).toString().padStart(2, '0')}</div>
-                                 ))}
-                              </div>
-                             {data.essayText}
+                              {/* Simulated Lines */}
+                               <div className="absolute left-[-3.5rem] top-0 bottom-0 w-full pointer-events-none opacity-10">
+                                  {Array.from({length: 40}).map((_, i) => (
+                                     <div key={i} className="h-[2.2em] border-b border-slate-400 dark:border-slate-600 flex items-center pl-4 text-[9px] font-mono text-slate-600 dark:text-slate-400">{(i+1).toString().padStart(2, '0')}</div>
+                                  ))}
+                               </div>
+                              {data.essayText}
                           </div>
                        </div>
                     </div>
 
-                    {/* Analysis */}
+                    {/* Analysis Section com o Dicionário MEC embutido */}
                     <div className="p-8 bg-slate-50 dark:bg-slate-900 border-t dark:border-slate-800">
                       <h3 className="text-lg font-black text-slate-800 dark:text-slate-100 mb-6 flex items-center gap-2">
                         🔍 Por que esta redação tirou 1000?
                       </h3>
                       <div className="grid gap-4">
-                        {data.comments.map((comment) => (
-                          <div key={comment.competencyId} className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
-                            <div className="flex justify-between items-start mb-2">
-                              <div className="font-black text-enem-blue dark:text-blue-400 text-xs uppercase tracking-widest">
-                                Competência {comment.competencyId}
-                              </div>
-                              <Badge color="green">Nível 5 (200 pts)</Badge>
-                            </div>
-                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight mb-3">{comment.competencyName}</div>
-                            <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
-                              {comment.justification}
-                            </p>
-                          </div>
-                        ))}
+                        {(data.comments?.length === 5 ? data.comments : Array(5).fill({})).map((comment: any, idx: number) => {
+                           const compId = (idx + 1);
+                           // Dicionário Oficial do ENEM
+                           const competenciasDesc: any = {
+                               1: { name: "Domínio da Norma Padrão", desc: "Demonstrar domínio da modalidade escrita formal da Língua Portuguesa." },
+                               2: { name: "Compreensão e Repertório", desc: "Compreender a proposta e aplicar conceitos das várias áreas de conhecimento." },
+                               3: { name: "Organização e Argumentação", desc: "Selecionar, relacionar, organizar e interpretar informações em defesa de um ponto de vista." },
+                               4: { name: "Coesão e Conectivos", desc: "Demonstrar conhecimento dos mecanismos linguísticos necessários para a argumentação." },
+                               5: { name: "Proposta de Intervenção", desc: "Elaborar proposta de intervenção para o problema respeitando os direitos humanos." }
+                           };
+                           
+                           const compData = competenciasDesc[compId];
+                           const justificativa = comment.justification || comment.feedback || `O texto atende perfeitamente aos requisitos da Competência ${compId}, garantindo a nota máxima.`;
+
+                           return (
+                             <div key={idx} className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm hover:scale-[1.02] transition-transform">
+                               <div className="flex justify-between items-start mb-2">
+                                 <div>
+                                   <div className="font-black text-enem-blue dark:text-blue-400 text-[10px] uppercase tracking-widest mb-1">
+                                     Competência {compId}
+                                   </div>
+                                   <h5 className="font-bold text-slate-800 dark:text-slate-200 text-sm leading-tight">{compData.name}</h5>
+                                 </div>
+                                 <Badge color="green" className="text-[10px] bg-green-100 text-green-700 whitespace-nowrap border-green-200">200 pts</Badge>
+                               </div>
+                               
+                               <p className="text-[11px] text-slate-400 mb-3 italic leading-relaxed">{compData.desc}</p>
+                               
+                               <div className="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-xl border border-blue-100 dark:border-blue-900/20">
+                                 <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
+                                   {justificativa}
+                                 </p>
+                               </div>
+                             </div>
+                           );
+                        })}
                       </div>
                     </div>
                   </div>

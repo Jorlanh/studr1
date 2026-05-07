@@ -86,21 +86,22 @@ async function sendRecoveryEmail(email, name, code) {
     });
 }
 
-// ─── Middleware: authenticateToken (with single-session check) ────────────────
+// ─── Middleware: authenticateToken (Multi-acesso Liberado) ───────────────────
 const authenticateToken = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
-    if (!token) return res.status(401).json({ error: 'Token não fornecido.' });
+    if (!token) return res.status(401).json({ error: 'Acesso negado.' });
 
     try {
-        const payload = jwt.verify(token, JWT_SECRET);
-        req.user = payload;
-
-        // Single-session enforcement: check sessionToken still valid in DB
+        // Usa process.env.JWT_SECRET para validar o token
+        const payload = jwt.verify(token, process.env.JWT_SECRET);
+        
+        // Checamos o banco apenas para ter certeza de que o usuário não foi bloqueado ou excluído.
+        // O sessionToken NÃO é mais verificado, permitindo acessos simultâneos ilimitados.
         const user = await prisma.user.findUnique({
             where: { id: payload.userId },
-            select: { sessionToken: true, isBlocked: true }
+            select: { id: true, isBlocked: true, role: true }
         });
 
         if (!user) {
@@ -113,12 +114,10 @@ const authenticateToken = async (req, res, next) => {
             return res.status(403).json({ error: 'Sua conta está bloqueada por atividade suspeita. Entre em contato com o suporte.' });
         }
 
-        if (payload.sessionToken && user.sessionToken !== payload.sessionToken) {
-            console.warn(`[Auth] Sessão inválida | userId: ${payload.userId} | JWT token: ${payload.sessionToken?.substring(0,8)}... | DB token: ${user.sessionToken?.substring(0,8)}... | path: ${req.path}`);
-            return res.status(401).json({ error: 'Sessão expirada. Faça login novamente.' });
-        }
-
+        // Passa os dados básicos pro request continuar
+        req.user = { userId: user.id, role: user.role };
         next();
+
     } catch (err) {
         if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
             console.warn(`[Auth] Token inválido ou expirado: ${err.message} | path: ${req.path}`);
@@ -137,17 +136,10 @@ const requireAdmin = async (req, res, next) => {
             return res.status(401).json({ error: 'Não autenticado.' });
         }
 
-        const user = await prisma.user.findUnique({
-            where: { id: req.user.userId },
-            select: { role: true, isBlocked: true }
-        });
-
-        if (!user || user.isBlocked) {
-            return res.status(403).json({ error: 'Acesso negado.' });
-        }
-
-        if (user.role !== 'admin') {
-            console.warn(`[Admin] Tentativa de acesso admin por role '${user.role}' | userId: ${req.user.userId} | path: ${req.path}`);
+        // Como o authenticateToken já trouxe a role e barrou bloqueados,
+        // só precisamos checar se a role é admin.
+        if (req.user.role !== 'admin') {
+            console.warn(`[Admin] Tentativa de acesso admin negada | userId: ${req.user.userId} | path: ${req.path}`);
             return res.status(403).json({ error: 'Acesso restrito ao administrador.' });
         }
 
