@@ -18,6 +18,7 @@ import StudyMapView from '../components/StudyMapView';
 import GamificationView from '../components/GamificationView';
 import ExamHistoryView from '../components/ExamHistoryView';
 import ExamReviewView from '../components/ExamReviewView';
+import TowerView from '../components/TowerView'; // 🗼 IMPORT ADICIONADO AQUI
 import AdminShell from '../components/AdminShell';
 import LandingPage from '../components/LandingPageV3';
 import AffiliateLandingPage from '../components/AffiliateLandingPage';
@@ -311,6 +312,29 @@ export function AppRouter() {
           isLoading={practiceLoading}
         />
       )}
+      {/* 🗼 TOWER VIEW CONECTADA AO GAME LOOP */}
+      {view === AppView.TOWER && (
+        <TowerView 
+           onBack={() => navigate(AppView.HOME)} 
+           onBattleStart={(floor) => {
+              sessionStorage.setItem('studr_current_tower_floor', JSON.stringify({
+                 id: floor.id, targetScore: floor.targetScore, floorNumber: floor.floorNumber, type: floor.type
+              }));
+
+              if (floor.type === 'ESSAY') {
+                 sessionStorage.setItem('studr_tower_essay_theme', floor.topic);
+                 navigate(AppView.ESSAY);
+              } else {
+                 sessionStorage.setItem('studr_exam_mode', 'TOWER'); 
+                 
+                 // O SEGREDO DO LIMITE: Em vez de startPractice, iniciamos um Mock!
+                 // O seu startSimulado cria uma prova limitada com fim definido (botão finalizar).
+                 startSimulado('AREA', floor.area); 
+              }
+           }} 
+        />
+      )}
+      
       {view === AppView.ADMIN_PANEL && user?.role === 'admin' && (
         <AdminShell onBack={() => navigate(AppView.HOME)} />
       )}
@@ -358,7 +382,7 @@ export function AppRouter() {
             Não conseguimos carregar a próxima questão agora.
           </p>
           <p className="text-sm text-gray-600 dark:text-slate-300">
-            Seu progresso está salvo — você pode tentar novamente em alguns segundos ou finalizar com o que já respondeu.
+            Seu progresso está salvo — você pode tentar novamente em alguns segundos ou finalizar com o que já respondi.
           </p>
           <div className="flex flex-col sm:flex-row gap-2 pt-2">
             <Button

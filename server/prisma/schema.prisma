@@ -8,27 +8,27 @@ datasource db {
 }
 
 model User {
-  id                    String       @id @default(cuid())
-  email                 String       @unique
+  id                    String            @id @default(cuid())
+  email                 String            @unique
   name                  String?
   password              String
-  isVerified            Boolean      @default(false)
+  isVerified            Boolean           @default(false)
   verificationCode      String?
-  trialEndsAt           DateTime     @default(now())
-  isPremium             Boolean      @default(false)
-  isBlocked             Boolean      @default(false)
+  trialEndsAt           DateTime          @default(now())
+  isPremium             Boolean           @default(false)
+  isBlocked             Boolean           @default(false)
   sessionToken          String?
-  role                  String       @default("student")
+  role                  String            @default("student")
   affiliateStatus       String?
   referralId            String?
   referralSource        String?
-  xp                    Int          @default(0)
-  level                 Int          @default(1)
-  medals                String[]     @default([])
-  createdAt             DateTime     @default(now())
-  updatedAt             DateTime     @updatedAt
-  asaasCustomerId       String?      @unique
-  asaasSubscriptionId   String?      @unique
+  xp                    Int               @default(0)
+  level                 Int               @default(1)
+  medals                String[]          @default([])
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  asaasCustomerId       String?           @unique
+  asaasSubscriptionId   String?           @unique
   billingCycle          String?
   lastPaymentDate       DateTime?
   planId                String?
@@ -38,8 +38,10 @@ model User {
   trialQuestionsDate    String?           // YYYY-MM-DD of current daily counter window
   trialQuestionsUsed    Int               @default(0)
   currentLeague         String            @default("BRONZE")
+  
+  // Relacionamentos Existentes
   exams                 Exam[]
-  plan                  Plan?        @relation(fields: [planId], references: [id])
+  plan                  Plan?             @relation(fields: [planId], references: [id])
   devices               UserDevice[]
   affiliateLink         AffiliateLink?
   userBadges            UserBadge[]
@@ -47,6 +49,9 @@ model User {
   xpRecord              UserXp?
   userProgress          UserProgress[]
   rankings              RankingSnapshot[]
+
+  // 🗼 INCREMENTO: MODO TORRE INFINITA
+  infiniteTower         UserInfiniteTower? 
 }
 
 model Plan {
@@ -233,4 +238,32 @@ model AffiliateLink {
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
   user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserInfiniteTower {
+  id           String       @id @default(uuid())
+  userId       String       @unique
+  highestFloor Int          @default(1) // O andar atual liberado
+  currentLives Int          @default(3) // Vidas para dar tensão (opcional para o futuro)
+
+  user         User         @relation(fields: [userId], references: [id])
+  floors       TowerFloor[]
+}
+
+model TowerFloor {
+  id          String   @id @default(uuid())
+  towerId     String
+  floorNumber Int
+  type        String   // "QUIZ" (Múltipla Escolha) ou "ESSAY" (Redação)
+  topic       String   // Tema da matéria (se QUIZ) ou Tema da Redação (se ESSAY)
+  area        String?  // HUMANAS, NATUREZA... (nulo se for redação)
+  targetScore Int      // Pontuação mínima exigida (Ex: TRI 450 ou Redação 600)
+  isBoss      Boolean  @default(false) // Se for Boss, dá mais XP
+
+  stars       Int      @default(0)     // 1, 2 ou 3 estrelas
+  completed   Boolean  @default(false) // Se já passou desse andar
+  bestScore   Int      @default(0)     // Maior nota que o aluno já tirou aqui
+  attempts    Int      @default(0)     // Quantas vezes tentou passar
+
+  tower       UserInfiniteTower @relation(fields: [towerId], references: [id], onDelete: Cascade)
 }

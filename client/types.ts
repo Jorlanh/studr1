@@ -21,6 +21,7 @@ export enum AppView {
   UPGRADE,
   EXAM_HISTORY,
   EXAM_REVIEW,
+  TOWER,
 }
 
 export enum AreaOfKnowledge {

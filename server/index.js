@@ -6,12 +6,19 @@ import jwt from 'jsonwebtoken';
 import { randomUUID, createHmac } from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import { Resend } from 'resend';
+
+// ─── SERVICES ─────────────────────────────────────────────────────────────
 import * as aiService from './services/aiService.js';
 import { checkAndConsumeQuestion, checkAndConsumeMock } from './services/planService.js';
-import { calculateScore } from './services/scoringService.js';
+import { calculateScore, calculateFinalGrade } from './services/scoringService.js';
+
+// 🛡️ CORREÇÃO AQUI: getTop3ForBuilding adicionado!
+import { getUserTower, submitFloorResult, getTop3ForBuilding } from './services/towerService.js';
+
 import { emitEvent, getState as getGamificationState } from './services/gamificationService.js';
 import { getCurrentRanking, rolloverWeek } from './services/rankingService.js';
 import { asaasService } from './services/asaasService.js';
+
 import cron from 'node-cron';
 
 
@@ -929,18 +936,21 @@ app.post('/api/exams/:id/finalize', authenticateToken, async (req, res) => {
         if (!exam) return res.status(404).json({ error: 'Simulado não encontrado.' });
         if (exam.finalizedAt) return res.status(400).json({ error: 'Simulado já finalizado.' });
 
-        const { responses } = req.body;
+        // INCREMENTO: Extraindo também o redacaoScore do corpo da requisição
+        const { responses, redacaoScore } = req.body;
         if (!Array.isArray(responses) || responses.length === 0) {
             return res.status(400).json({ error: 'Respostas inválidas.' });
         }
 
-        const { theta, score, band } = await calculateScore(responses);
+        // INCREMENTO: Usando a nova função calculateFinalGrade que leva a redação em conta
+        const { theta, score, band, finalAverage, scoresByArea } = await calculateFinalGrade(responses, redacaoScore || 0);
         const timeSpentSec = Math.round((Date.now() - new Date(exam.createdAt).getTime()) / 1000);
 
         // Persist finalization data
         await prisma.exam.update({
             where: { id: examId },
-            data: { score, theta, band, timeSpentSec, finalizedAt: new Date() },
+            // INCREMENTO: Salvamos a finalAverage como o "score" final do simulado no banco
+            data: { score: finalAverage, theta, band, timeSpentSec, finalizedAt: new Date() },
         });
 
         // Backfill ExamQuestion answers (upsert in case real-time recording missed any)
@@ -958,7 +968,8 @@ app.post('/api/exams/:id/finalize', authenticateToken, async (req, res) => {
             );
         if (updateOps.length > 0) await Promise.all(updateOps);
 
-        res.json({ score, band, theta });
+        // INCREMENTO: Retornamos o finalAverage como score, além das notas divididas por área
+        res.json({ score: finalAverage, band, theta, scoresByArea });
     } catch (err) {
         console.error('[finalize] erro:', err);
         res.status(500).json({ error: 'Erro ao finalizar simulado.' });
@@ -1023,6 +1034,39 @@ app.get('/api/exams/:id', authenticateToken, async (req, res) => {
     } catch (err) {
         console.error('[exam detail] erro:', err);
         res.status(500).json({ error: 'Erro ao buscar simulado.' });
+    }
+});
+
+// ─── Torre Infinita Rotas ─────────────────────────────────────────────────────
+
+app.get('/api/tower/state', authenticateToken, async (req, res) => {
+    try {
+        const tower = await getUserTower(req.user.userId);
+        res.json(tower);
+    } catch (err) {
+        console.error('[tower/state] erro:', err);
+        res.status(500).json({ error: 'Erro ao carregar mapa da Torre.' });
+    }
+});
+
+app.post('/api/tower/submit', authenticateToken, async (req, res) => {
+    try {
+        const { floorId, score } = req.body;
+        const result = await submitFloorResult(req.user.userId, floorId, score);
+        res.json(result); // Retorna { isWin, stars, xpGained, unlockedNext }
+    } catch (err) {
+        console.error('[tower/submit] erro:', err);
+        res.status(500).json({ error: 'Erro ao validar andar da torre.' });
+    }
+});
+
+app.get('/api/tower/top3/:floorNumber', authenticateToken, async (req, res) => {
+    try {
+        const top3 = await getTop3ForBuilding(req.params.floorNumber);
+        res.json(top3);
+    } catch (err) {
+        console.error('[tower/top3] erro:', err);
+        res.status(500).json({ error: 'Erro ao buscar Top 3.' });
     }
 });
 

@@ -146,16 +146,21 @@ export default function HomeView() {
 
         {/* Bloco 3: TUTOR IA (Span 4 colunas) */}
         <BentoCard 
-          className="md:col-span-4 md:row-span-1 bg-slate-900 text-white"
+          className="md:col-span-4 md:row-span-1 bg-gradient-to-br from-violet-50 to-purple-50/50 dark:from-violet-900/10 dark:to-slate-900"
           locked={!isPremium}
           onLockedClick={openPricing}
         >
           <div className="flex items-center gap-3 mb-3">
-             <span className="text-3xl bg-white/10 p-2.5 rounded-xl">🤖</span>
-             <h2 className="text-xl font-black text-white">Tutor 24h</h2>
+             <span className="text-3xl bg-white dark:bg-slate-800 p-2.5 rounded-xl shadow-sm">🤖</span>
+             <h2 className="text-xl font-black text-slate-800 dark:text-white">Tutor 24h</h2>
           </div>
-          <p className="text-slate-400 text-xs mb-auto pb-4">Resolva dúvidas de exatas ou humanas instantaneamente.</p>
-          <Button onClick={() => setChatOpen(true)} className="w-full text-xs font-bold py-3 bg-white text-slate-900 hover:bg-slate-100 shadow-xl">
+          <p className="text-slate-500 dark:text-slate-400 text-xs mb-auto pb-4">
+            Resolva dúvidas de exatas ou humanas instantaneamente.
+          </p>
+          <Button 
+            onClick={() => setChatOpen(true)} 
+            className="w-full text-xs font-bold py-3 bg-violet-600 hover:bg-violet-700 text-white shadow-lg shadow-violet-500/20"
+          >
             Chamar Tutor Agora
           </Button>
         </BentoCard>
@@ -225,6 +230,31 @@ export default function HomeView() {
                 ))}
              </div>
           </div>
+        </BentoCard>
+
+{/* Bloco EXTRA: A ESCALADA (Torre Infinita - Span 12 colunas) */}
+        <BentoCard 
+          className="md:col-span-12 md:row-span-1 bg-gradient-to-r from-cyan-50 to-blue-50/50 dark:from-cyan-900/10 dark:to-slate-900 flex flex-col md:flex-row items-center justify-between gap-6"
+          locked={!(isPremium || isTrial)}
+          onLockedClick={openPricing}
+        >
+          <div className="flex items-center gap-4 w-full md:w-auto text-left">
+             <span className="text-4xl md:text-5xl bg-white dark:bg-slate-800 p-3 rounded-2xl shadow-sm flex-shrink-0">🗼</span>
+             <div>
+               <h2 className="text-xl font-black text-slate-800 dark:text-white">
+                 A Escalada TRI
+               </h2>
+               <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-2xl">
+                 Embarque na torre infinita. Batalhas contra Chefões, Redações e dificuldade que cresce a cada andar. Quanto XP você consegue farmar?
+               </p>
+             </div>
+          </div>
+          <Button 
+            onClick={() => navigate(AppView.TOWER)} 
+            className="w-full md:w-auto px-8 py-3 bg-cyan-600 hover:bg-cyan-700 text-white font-bold shadow-lg shadow-cyan-500/20 whitespace-nowrap"
+          >
+            ⚔️ Iniciar Jornada
+          </Button>
         </BentoCard>
 
         {/* Bloco 6: MAPA MENTAL (Span 12 colunas) */}
