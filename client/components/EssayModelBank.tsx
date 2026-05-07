@@ -132,7 +132,7 @@ const EssayModelBank: React.FC<EssayModelBankProps> = ({ onBack }) => {
                            const justificativa = comment.justification || comment.feedback || `O texto atende perfeitamente aos requisitos da Competência ${compId}, garantindo a nota máxima.`;
 
                            return (
-                             <div key={idx} className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm hover:scale-[1.02] transition-transform">
+                            <div key={idx} className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm hover:scale-[1.02] transition-transform">
                                <div className="flex justify-between items-start mb-2">
                                  <div>
                                    <div className="font-black text-enem-blue dark:text-blue-400 text-[10px] uppercase tracking-widest mb-1">
