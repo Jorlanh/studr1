@@ -168,4 +168,4 @@ Documentos detalhados estão na pasta `documentos/`:
 ## Contato
 
 Projeto: **Studr / SBM Cloud**  
-Responsável: Fabio Patricio — appmagic2026@gmail.com
+Responsável: Jorlan Heider
