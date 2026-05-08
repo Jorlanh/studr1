@@ -10,35 +10,104 @@ import { Button, Badge } from './UIComponents';
 import Logo from './Logo';
 import { SUBJECT_AREAS, SPECIFIC_SUBJECTS } from '../constants';
 
-const BentoCard = ({ children, className = '', locked = false, onLockedClick }: any) => (
-  <div 
+const BentoCard = ({
+  children,
+  className = '',
+  locked = false,
+  onLockedClick
+}: any) => (
+  <div
     onClick={locked ? onLockedClick : undefined}
-    className={`relative group rounded-3xl p-6 transition-all duration-300 overflow-hidden ${locked ? 'cursor-pointer' : ''} ${className}`}
+    className={`relative overflow-hidden rounded-[30px] border transition-all duration-500 group
+    ${
+      locked ? 'cursor-pointer' : ''
+    }
+    border-slate-200/70 dark:border-slate-700/50
+    bg-white dark:bg-[#0B1120]
+    shadow-[0_10px_40px_rgba(0,0,0,0.06)]
+    dark:shadow-[0_10px_40px_rgba(0,0,0,0.45)]
+    hover:-translate-y-1 hover:shadow-[0_15px_60px_rgba(59,130,246,0.15)]
+    ${className}`}
   >
-    {/* Glassmorphism Background */}
-    <div className={`absolute inset-0 transition-opacity duration-300 ${locked ? 'bg-slate-200/80 dark:bg-slate-900/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center' : 'bg-white/80 dark:bg-slate-800/80 backdrop-blur-md shadow-xl border border-slate-100 dark:border-slate-700/50 hover:shadow-2xl hover:-translate-y-1'}`}>
-        {locked && (
-            <div className="text-center opacity-100 transform group-hover:scale-110 transition-transform">
-                <div className="w-14 h-14 bg-white dark:bg-slate-800 rounded-full shadow-lg flex items-center justify-center mx-auto mb-3">
-                    <span className="text-2xl">🔒</span>
-                </div>
-                <h3 className="font-bold text-slate-800 dark:text-white text-lg">Premium</h3>
-                <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mt-1">Desbloquear acesso</p>
-            </div>
-        )}
+    {/* Glow */}
+    <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition duration-500">
+      <div className="absolute -top-24 -right-24 w-52 h-52 bg-blue-500/10 blur-3xl rounded-full" />
+      <div className="absolute bottom-0 left-0 w-44 h-44 bg-purple-500/10 blur-3xl rounded-full" />
     </div>
-    
-    <div className={`relative z-10 h-full flex flex-col ${locked ? 'opacity-30 grayscale blur-[2px]' : ''}`}>
-        {children}
+
+    {/* Grid Effect */}
+    <div className="absolute inset-0 opacity-[0.04] dark:opacity-[0.06] bg-[linear-gradient(to_right,#64748b_1px,transparent_1px),linear-gradient(to_bottom,#64748b_1px,transparent_1px)] bg-[size:30px_30px]" />
+
+    {/* Locked */}
+    {locked && (
+      <div className="absolute inset-0 z-30 backdrop-blur-md bg-white/70 dark:bg-black/60 flex flex-col items-center justify-center">
+        <div className="w-16 h-16 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-center shadow-xl mb-3">
+          <span className="text-3xl">🔒</span>
+        </div>
+
+        <h3 className="text-lg font-black text-slate-800 dark:text-white">
+          Conteúdo Premium
+        </h3>
+
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+          Clique para desbloquear
+        </p>
+      </div>
+    )}
+
+    <div
+      className={`relative z-10 h-full p-6 flex flex-col ${
+        locked ? 'opacity-30 blur-[2px]' : ''
+      }`}
+    >
+      {children}
+    </div>
+  </div>
+);
+
+const ModuleTitle = ({
+  icon,
+  title,
+  description
+}: {
+  icon: string;
+  title: string;
+  description: string;
+}) => (
+  <div className="flex items-start gap-4 mb-6">
+    <div className="min-w-[62px] min-h-[62px] rounded-2xl flex items-center justify-center text-3xl
+    bg-gradient-to-br from-slate-100 to-white
+    dark:from-slate-800 dark:to-slate-900
+    border border-slate-200 dark:border-slate-700
+    shadow-lg">
+      {icon}
+    </div>
+
+    <div>
+      <h2 className="text-xl md:text-2xl font-black text-slate-800 dark:text-white tracking-tight">
+        {title}
+      </h2>
+
+      <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+        {description}
+      </p>
     </div>
   </div>
 );
 
 export default function HomeView() {
-  const { user, trialActive, isTrial } = useUser();
+  const { user, isTrial } = useUser();
   const { navLevel, navXp } = useGamification();
-  const { startPractice, loading: practiceLoading, specificTopicInput, setSpecificTopicInput } = usePractice();
+
+  const {
+    startPractice,
+    loading: practiceLoading,
+    specificTopicInput,
+    setSpecificTopicInput
+  } = usePractice();
+
   const { startSimulado, loading: mockLoading } = useMock();
+
   const { navigate } = useNavigation();
   const { openPricing, setChatOpen } = useUI();
 
@@ -47,234 +116,479 @@ export default function HomeView() {
 
   const hasTakenMockThisMonth = () => {
     if (!user?.id) return false;
-    const lastMock = localStorage.getItem(`studr_last_mock_${user.id}`);
+
+    const lastMock = localStorage.getItem(
+      `studr_last_mock_${user.id}`
+    );
+
     if (!lastMock) return false;
+
     const lastMockDate = new Date(lastMock);
     const now = new Date();
-    return lastMockDate.getMonth() === now.getMonth() && lastMockDate.getFullYear() === now.getFullYear();
+
+    return (
+      lastMockDate.getMonth() === now.getMonth() &&
+      lastMockDate.getFullYear() === now.getFullYear()
+    );
   };
 
   return (
-    <div className="max-w-7xl mx-auto pt-10 px-4 animate-fade-in pb-20">
-      
-      {/* Header Moderno */}
-      <div className="flex flex-col items-center text-center mb-12">
-        <Logo className="h-16 md:h-20 mb-8 transform hover:scale-105 transition-transform" />
-        <h1 className="text-4xl md:text-5xl font-black text-slate-800 dark:text-white tracking-tight mb-4">
-          O Seu Futuro <span className="text-transparent bg-clip-text bg-gradient-to-r from-enem-blue to-purple-600">Aprovado.</span>
-        </h1>
-        <p className="text-lg md:text-xl text-slate-500 dark:text-slate-400 max-w-2xl">
-          A única plataforma inteligente que calibra seus estudos com a verdadeira <strong className="text-slate-700 dark:text-slate-200">Teoria de Resposta ao Item (TRI)</strong>.
-        </p>
-        {isMockOnly && (
-          <Badge color="yellow" className="mt-6 px-5 py-2 text-sm shadow-sm backdrop-blur-md bg-yellow-500/10 border border-yellow-500/20">
-            ✨ Assinante Simulado Mensal
-          </Badge>
-        )}
+    <div className="relative min-h-screen overflow-hidden bg-[#F8FAFC] dark:bg-[#020617]">
+
+      {/* Background */}
+      <div className="absolute inset-0">
+        <div className="absolute top-[-200px] left-[-150px] w-[500px] h-[500px] bg-blue-500/10 blur-3xl rounded-full" />
+        <div className="absolute bottom-[-200px] right-[-150px] w-[500px] h-[500px] bg-purple-500/10 blur-3xl rounded-full" />
       </div>
 
-      {/* Bento Grid Layout */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-6 auto-rows-[minmax(180px,auto)]">
+      <div className="relative z-10 max-w-7xl mx-auto px-4 py-10">
 
-        {/* Bloco 1: SIMULADO (Destaque Principal - Span 8 colunas) */}
-        <BentoCard 
-          className="md:col-span-8 md:row-span-2 bg-gradient-to-br from-slate-50 to-blue-50/50 dark:from-slate-900 dark:to-blue-900/10"
-          locked={!(isPremium || isMockOnly || isTrial)}
-          onLockedClick={openPricing}
-        >
-          <div className="flex justify-between items-start mb-6">
-             <div>
-                <div className="flex items-center gap-3 mb-2">
-                  <span className="text-4xl bg-white dark:bg-slate-800 p-3 rounded-2xl shadow-sm">⏱️</span>
-                  <h2 className="text-2xl font-black text-slate-800 dark:text-white">Simulado Oficial</h2>
-                </div>
-                <p className="text-slate-500 dark:text-slate-400 text-sm max-w-md">
-                  {isMockOnly ? 'Plano Mensal: 1 tentativa por mês com calibração TRI.' : 'Experiência real com 180 questões e cálculo TRI avançado.'}
-                </p>
-             </div>
-             <Badge color="blue" className="hidden md:flex">Padrão ENEM</Badge>
-          </div>
+        {/* HERO */}
+        <div className="relative overflow-hidden rounded-[38px] border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-8 md:p-12 mb-8">
 
-          <div className="mt-auto space-y-4">
-             <Button
-                onClick={() => startSimulado('FULL')}
-                disabled={mockLoading || (isMockOnly && hasTakenMockThisMonth())}
-                className="w-full text-sm md:text-base py-4 font-bold bg-enem-blue hover:bg-blue-700 text-white shadow-lg shadow-blue-500/30 transition-all hover:-translate-y-0.5"
+          {/* Hero Glow */}
+          <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 blur-3xl rounded-full" />
+          <div className="absolute bottom-0 left-0 w-96 h-96 bg-purple-500/10 blur-3xl rounded-full" />
+
+          <div className="relative z-10 flex flex-col items-center text-center">
+
+            <Logo className="h-16 md:h-20 mb-8 transition-transform hover:scale-105" />
+
+            <Badge
+              color="blue"
+              className="mb-5 px-4 py-1.5 rounded-full"
+            >
+              Plataforma Inteligente TRI
+            </Badge>
+
+            <h1 className="text-5xl md:text-7xl font-black tracking-tight text-slate-900 dark:text-white leading-tight max-w-5xl">
+              Transforme seus estudos em
+              <span className="block text-transparent bg-clip-text bg-gradient-to-r from-blue-500 via-cyan-400 to-purple-500">
+                performance máxima.
+              </span>
+            </h1>
+
+            <p className="mt-6 max-w-3xl text-lg md:text-xl text-slate-500 dark:text-slate-400 leading-relaxed">
+              Plataforma futurista baseada em IA, gamificação e análise TRI
+              para elevar seu desempenho ao próximo nível.
+            </p>
+
+            {isMockOnly && (
+              <Badge
+                color="yellow"
+                className="mt-6 px-5 py-2 rounded-full"
               >
-                {mockLoading ? 'Calibrando IA...' : isMockOnly && hasTakenMockThisMonth() ? '🔄 Limite Mensal Atingido' : (isTrial ? '⏱️ Iniciar Simulado Rápido' : '🏆 Iniciar Simulado Completo (180q)')}
-             </Button>
+                ✨ Assinante Simulado Mensal
+              </Badge>
+            )}
+          </div>
+        </div>
 
-             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                {SUBJECT_AREAS.map(area => (
-                  <button
-                    key={area.id}
-                    disabled={mockLoading || (isMockOnly && hasTakenMockThisMonth())}
-                    onClick={() => startSimulado('AREA', area.id)}
-                    className="p-3 text-[11px] md:text-xs font-bold bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl text-center text-slate-600 dark:text-slate-300 transition-colors shadow-sm"
-                  >
-                    {area.name}
-                  </button>
-                ))}
-             </div>
-             
-             <div className="flex justify-end mt-2">
-                <button onClick={() => navigate(AppView.EXAM_HISTORY)} className="text-xs font-bold text-slate-400 hover:text-enem-blue transition-colors">
-                  Ver meu histórico completo →
-                </button>
-             </div>
-          </div>
-        </BentoCard>
+        {/* MODULE GRID */}
+    <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
 
-        {/* Bloco 2: EVOLUÇÃO (Span 4 colunas) */}
-        <BentoCard 
-          className="md:col-span-4 md:row-span-1 bg-gradient-to-br from-purple-50 to-white dark:from-purple-900/10 dark:to-slate-900"
-          locked={!(isPremium || isTrial)}
-          onLockedClick={openPricing}
-        >
-          <div className="flex items-center gap-3 mb-4">
-             <span className="text-3xl bg-white dark:bg-slate-800 p-2.5 rounded-xl shadow-sm">🎮</span>
-             <h2 className="text-xl font-black text-slate-800 dark:text-white">Seu Nível</h2>
-          </div>
-          <div className="flex flex-col items-center justify-center bg-white dark:bg-slate-800 rounded-2xl py-4 border border-slate-100 dark:border-slate-700 shadow-sm mb-4">
-             <span className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-indigo-600">{navLevel}</span>
-             <span className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">{navXp} XP Acumulados</span>
-          </div>
-          <Button onClick={() => navigate(AppView.GAMIFICATION)} variant="outline" className="w-full text-xs font-bold py-2 border-purple-200 text-purple-700 dark:border-purple-800 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30">
-            Ver Ranking Completo
-          </Button>
-        </BentoCard>
+      {/* ========================================= */}
+      {/* 1 - PRÁTICA INFINITA (CARRO CHEFE) */}
+      {/* ========================================= */}
+      <BentoCard
+        className="md:col-span-12 min-h-[300px]"
+        locked={!(isPremium || isTrial)}
+        onLockedClick={openPricing}
+      >
+        <div className="absolute top-0 right-0 w-72 h-72 bg-blue-500/10 blur-3xl rounded-full" />
 
-        {/* Bloco 3: TUTOR IA (Span 4 colunas) */}
-        <BentoCard 
-          className="md:col-span-4 md:row-span-1 bg-gradient-to-br from-violet-50 to-purple-50/50 dark:from-violet-900/10 dark:to-slate-900"
-          locked={!isPremium}
-          onLockedClick={openPricing}
-        >
-          <div className="flex items-center gap-3 mb-3">
-             <span className="text-3xl bg-white dark:bg-slate-800 p-2.5 rounded-xl shadow-sm">🤖</span>
-             <h2 className="text-xl font-black text-slate-800 dark:text-white">Tutor 24h</h2>
-          </div>
-          <p className="text-slate-500 dark:text-slate-400 text-xs mb-auto pb-4">
-            Resolva dúvidas de exatas ou humanas instantaneamente.
-          </p>
-          <Button 
-            onClick={() => setChatOpen(true)} 
-            className="w-full text-xs font-bold py-3 bg-violet-600 hover:bg-violet-700 text-white shadow-lg shadow-violet-500/20"
-          >
-            Chamar Tutor Agora
-          </Button>
-        </BentoCard>
-
-        {/* Bloco 4: REDAÇÃO IA (Span 6 colunas) */}
-        <BentoCard 
-          className="md:col-span-6 md:row-span-2 bg-gradient-to-br from-pink-50 to-rose-50/30 dark:from-pink-900/10 dark:to-slate-900"
-          locked={!isPremium}
-          onLockedClick={openPricing}
-        >
-          <div className="flex items-center gap-3 mb-4">
-             <span className="text-4xl bg-white dark:bg-slate-800 p-3 rounded-2xl shadow-sm">📝</span>
-             <h2 className="text-2xl font-black text-slate-800 dark:text-white">Redação IA</h2>
-          </div>
-          <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
-            Treine com temas atualizados e receba correção técnica focada nas 5 competências do MEC.
-          </p>
+        <div className="flex flex-col lg:flex-row gap-8 h-full justify-between">
           
-          <div className="mt-auto flex flex-col gap-3">
-             <Button onClick={() => navigate(AppView.ESSAY)} className="w-full text-sm py-4 font-bold bg-pink-600 hover:bg-pink-700 text-white shadow-lg shadow-pink-500/20">
-                ✍️ Escrever Nova Redação
-             </Button>
-             <Button onClick={() => navigate(AppView.ESSAY_BANK)} variant="outline" className="w-full text-sm py-3 font-bold border-pink-200 text-pink-700 dark:border-pink-800 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-900/20">
-                📚 Ler Modelos Nota 1000
-             </Button>
-          </div>
-        </BentoCard>
-
-        {/* Bloco 5: GERADOR INFINITO (Span 6 colunas) */}
-        <BentoCard 
-          className="md:col-span-6 md:row-span-2"
-          locked={!(isPremium || isTrial)}
-          onLockedClick={openPricing}
-        >
-          <div className="flex items-center gap-3 mb-4">
-             <span className="text-4xl bg-slate-50 dark:bg-slate-800 p-3 rounded-2xl shadow-sm">♾️</span>
-             <h2 className="text-2xl font-black text-slate-800 dark:text-white">Prática Infinita</h2>
-          </div>
-          <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
-             Digite um assunto ou escolha uma matéria para gerar listas de exercícios infinitas sob medida.
-          </p>
-          
-          <div className="mt-auto space-y-4">
-             <div className="flex gap-2">
-                <input
-                   type="text"
-                   placeholder="Ex: Revolução Industrial..."
-                   value={specificTopicInput}
-                   onChange={(e) => setSpecificTopicInput(e.target.value)}
-                   className="w-full border border-slate-200 dark:border-slate-700 p-3 rounded-xl text-sm focus:ring-2 focus:ring-enem-blue focus:border-transparent bg-slate-50 dark:bg-slate-800 dark:text-white transition-all shadow-inner"
-                />
-                <Button onClick={() => startPractice(AreaOfKnowledge.MIXED, specificTopicInput)} disabled={!specificTopicInput} variant="primary" className="px-6 py-3 font-bold">
-                   Gerar
-                </Button>
-             </div>
-             
-             <div className="flex flex-wrap gap-2 pt-2">
-                {SPECIFIC_SUBJECTS.map((subject) => (
-                   <button
-                      key={subject.name}
-                      disabled={practiceLoading}
-                      onClick={() => startPractice(subject.area, subject.name)}
-                      className="px-3 py-1.5 text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-                   >
-                      {subject.name}
-                   </button>
-                ))}
-             </div>
-          </div>
-        </BentoCard>
-
-{/* Bloco EXTRA: A ESCALADA (Torre Infinita - Span 12 colunas) */}
-        <BentoCard 
-          className="md:col-span-12 md:row-span-1 bg-gradient-to-r from-cyan-50 to-blue-50/50 dark:from-cyan-900/10 dark:to-slate-900 flex flex-col md:flex-row items-center justify-between gap-6"
-          locked={!(isPremium || isTrial)}
-          onLockedClick={openPricing}
-        >
-          <div className="flex items-center gap-4 w-full md:w-auto text-left">
-             <span className="text-4xl md:text-5xl bg-white dark:bg-slate-800 p-3 rounded-2xl shadow-sm flex-shrink-0">🗼</span>
-             <div>
-               <h2 className="text-xl font-black text-slate-800 dark:text-white">
-                 A Escalada TRI
-               </h2>
-               <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-2xl">
-                 Embarque na torre infinita. Batalhas contra Chefões, Redações e dificuldade que cresce a cada andar. Quanto XP você consegue farmar?
-               </p>
-             </div>
-          </div>
-          <Button 
-            onClick={() => navigate(AppView.TOWER)} 
-            className="w-full md:w-auto px-8 py-3 bg-cyan-600 hover:bg-cyan-700 text-white font-bold shadow-lg shadow-cyan-500/20 whitespace-nowrap"
-          >
-            ⚔️ Iniciar Jornada
-          </Button>
-        </BentoCard>
-
-        {/* Bloco 6: MAPA MENTAL (Span 12 colunas) */}
-        <BentoCard 
-          className="md:col-span-12 md:row-span-1 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/10 dark:to-teal-900/10 flex flex-col md:flex-row items-center justify-between gap-6"
-          locked={!(isPremium || isTrial)}
-          onLockedClick={openPricing}
-        >
-           <div className="flex items-center gap-4">
-              <span className="text-5xl drop-shadow-sm">🗺️</span>
-              <div>
-                 <h2 className="text-xl font-black text-slate-800 dark:text-white">Mapas Mentais Inteligentes</h2>
-                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Conecte os pontos e revise conceitos visualmente antes da prova.</p>
+          {/* Left */}
+          <div className="flex-1">
+            <div className="flex items-center gap-4 mb-5">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center text-3xl shadow-xl shadow-blue-500/30">
+                ♾️
               </div>
-           </div>
-           <Button onClick={() => navigate(AppView.STUDY_GUIDE)} className="w-full md:w-auto px-8 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-lg shadow-emerald-500/20">
-              Gerar Mapa de Estudo
-           </Button>
-        </BentoCard>
 
+              <div>
+                <span className="text-xs uppercase tracking-[4px] text-blue-500 font-bold">
+                  Inteligência Artificial
+                </span>
+
+                <h1 className="text-3xl md:text-5xl font-black text-slate-900 dark:text-white leading-none mt-1">
+                  Prática Infinita
+                </h1>
+              </div>
+            </div>
+
+            <p className="text-slate-500 dark:text-slate-400 text-sm md:text-base max-w-2xl leading-relaxed">
+              Gere listas infinitas com IA adaptativa, dificuldade dinâmica e foco total no seu desempenho TRI.
+            </p>
+
+            <div className="mt-7 flex flex-col md:flex-row gap-3">
+              <input
+                type="text"
+                placeholder="Digite um assunto..."
+                value={specificTopicInput}
+                onChange={(e) => setSpecificTopicInput(e.target.value)}
+                className="
+                flex-1
+                h-14
+                px-5
+                rounded-2xl
+                border
+                border-slate-200 dark:border-slate-700
+                bg-white/70 dark:bg-slate-900/70
+                backdrop-blur-xl
+                text-sm
+                outline-none
+                focus:ring-2
+                focus:ring-blue-500
+                shadow-inner
+              "
+              />
+
+              <Button
+                onClick={() =>
+                  startPractice(
+                    AreaOfKnowledge.MIXED,
+                    specificTopicInput
+                  )
+                }
+                disabled={!specificTopicInput}
+                className="
+                h-14
+                px-8
+                rounded-2xl
+                font-black
+                bg-gradient-to-r
+                from-blue-600
+                to-cyan-500
+                hover:scale-[1.02]
+                shadow-[0_10px_30px_rgba(59,130,246,0.35)]
+              "
+              >
+                🚀 Gerar Questões
+              </Button>
+            </div>
+          </div>
+
+          {/* Right */}
+          <div className="lg:w-[320px]">
+            <div className="grid grid-cols-2 gap-2">
+              {SPECIFIC_SUBJECTS.slice(0, 8).map((subject) => (
+                <button
+                  key={subject.name}
+                  disabled={practiceLoading}
+                  onClick={() =>
+                    startPractice(subject.area, subject.name)
+                  }
+                  className="
+                  p-3
+                  rounded-2xl
+                  text-xs
+                  font-bold
+                  border
+                  border-slate-200 dark:border-slate-700
+                  bg-white/60 dark:bg-slate-800/60
+                  backdrop-blur-xl
+                  hover:border-blue-400
+                  hover:-translate-y-1
+                  transition-all
+                "
+                >
+                  {subject.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </BentoCard>
+
+      {/* ========================================= */}
+      {/* 2 - SIMULADO */}
+      {/* ========================================= */}
+      <BentoCard
+        className="md:col-span-8 min-h-[260px]"
+        locked={!(isPremium || isMockOnly || isTrial)}
+        onLockedClick={openPricing}
+      >
+        <div className="flex items-start justify-between mb-5">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-2xl shadow-lg">
+              ⏱️
+            </div>
+
+            <div>
+              <h2 className="text-2xl font-black text-slate-900 dark:text-white">
+                Simulado Oficial
+              </h2>
+
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Simulação real com análise TRI avançada.
+              </p>
+            </div>
+          </div>
+
+          <Badge color="blue">ENEM</Badge>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-5">
+          {SUBJECT_AREAS.map((area) => (
+            <button
+              key={area.id}
+              disabled={
+                mockLoading ||
+                (isMockOnly && hasTakenMockThisMonth())
+              }
+              onClick={() =>
+                startSimulado('AREA', area.id)
+              }
+              className="
+              h-12
+              rounded-xl
+              border
+              border-slate-200 dark:border-slate-700
+              bg-slate-50 dark:bg-slate-800
+              text-xs
+              font-bold
+              hover:border-blue-400
+              transition-all
+            "
+            >
+              {area.name}
+            </button>
+          ))}
+        </div>
+
+        <Button
+          onClick={() => startSimulado('FULL')}
+          disabled={
+            mockLoading ||
+            (isMockOnly && hasTakenMockThisMonth())
+          }
+          className="
+          w-full
+          h-14
+          rounded-2xl
+          font-black
+          bg-gradient-to-r
+          from-blue-600
+          to-indigo-500
+        "
+        >
+          {mockLoading
+            ? 'Calibrando IA...'
+            : '🏆 Iniciar Simulado'}
+        </Button>
+      </BentoCard>
+
+      {/* ========================================= */}
+      {/* 3 - TUTOR IA */}
+      {/* ========================================= */}
+      <BentoCard
+        className="md:col-span-4 min-h-[260px]"
+        locked={!isPremium}
+        onLockedClick={openPricing}
+      >
+        <div className="flex flex-col h-full">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center text-2xl shadow-lg">
+              🤖
+            </div>
+
+            <div>
+              <h2 className="text-2xl font-black text-slate-900 dark:text-white">
+                Tutor IA
+              </h2>
+
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Tire dúvidas em segundos.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex-1 rounded-2xl border border-slate-200 dark:border-slate-700 bg-gradient-to-br from-violet-500/10 to-fuchsia-500/10 p-4 flex items-center justify-center">
+            <p className="text-sm text-center text-slate-600 dark:text-slate-300">
+              IA treinada para exatas, humanas e redação.
+            </p>
+          </div>
+
+          <Button
+            onClick={() => setChatOpen(true)}
+            className="
+            mt-4
+            h-14
+            rounded-2xl
+            font-black
+            bg-gradient-to-r
+            from-violet-600
+            to-fuchsia-500
+          "
+          >
+            Abrir Tutor
+          </Button>
+        </div>
+      </BentoCard>
+
+      {/* ========================================= */}
+      {/* 4 - REDAÇÃO */}
+      {/* ========================================= */}
+      <BentoCard
+        className="md:col-span-4 min-h-[240px]"
+        locked={!isPremium}
+        onLockedClick={openPricing}
+      >
+        <div className="flex items-center gap-4 mb-4">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-2xl shadow-lg">
+            📝
+          </div>
+
+          <div>
+            <h2 className="text-2xl font-black text-slate-900 dark:text-white">
+              Redação IA
+            </h2>
+
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Correção automática nota 1000.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-auto flex flex-col gap-3">
+          <Button
+            onClick={() => navigate(AppView.ESSAY)}
+            className="
+            h-12
+            rounded-2xl
+            font-black
+            bg-gradient-to-r
+            from-pink-500
+            to-rose-500
+          "
+          >
+            Nova Redação
+          </Button>
+
+          <Button
+            onClick={() =>
+              navigate(AppView.ESSAY_BANK)
+            }
+            variant="outline"
+            className="h-12 rounded-2xl font-bold"
+          >
+            Modelos Nota 1000
+          </Button>
+        </div>
+      </BentoCard>
+
+      {/* ========================================= */}
+      {/* 5 - JORNADA */}
+      {/* ========================================= */}
+      <BentoCard
+        className="md:col-span-4 min-h-[240px]"
+        locked={!(isPremium || isTrial)}
+        onLockedClick={openPricing}
+      >
+        <div className="flex items-center gap-4 mb-4">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-2xl shadow-lg">
+            🗼
+          </div>
+
+          <div>
+            <h2 className="text-2xl font-black text-slate-900 dark:text-white">
+              Jornada TRI
+            </h2>
+
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Suba níveis e enfrente desafios.
+            </p>
+          </div>
+        </div>
+
+        <Button
+          onClick={() => navigate(AppView.TOWER)}
+          className="
+          mt-auto
+          h-12
+          rounded-2xl
+          font-black
+          bg-gradient-to-r
+          from-cyan-500
+          to-blue-600
+        "
+        >
+          ⚔️ Iniciar Jornada
+        </Button>
+      </BentoCard>
+
+      {/* ========================================= */}
+      {/* 6 - NÍVEL */}
+      {/* ========================================= */}
+      <BentoCard
+        className="md:col-span-2 min-h-[240px]"
+        locked={!(isPremium || isTrial)}
+        onLockedClick={openPricing}
+      >
+        <div className="flex flex-col items-center justify-center h-full">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-3xl shadow-xl mb-5">
+            🎮
+          </div>
+
+          <span className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-500 to-indigo-500">
+            {navLevel}
+          </span>
+
+          <span className="text-xs tracking-[3px] uppercase text-slate-500 mt-2">
+            {navXp} XP
+          </span>
+
+          <Button
+            onClick={() =>
+              navigate(AppView.GAMIFICATION)
+            }
+            variant="outline"
+            className="mt-5 w-full rounded-2xl"
+          >
+            Ranking
+          </Button>
+        </div>
+      </BentoCard>
+
+      {/* ========================================= */}
+      {/* 7 - MAPA MENTAL */}
+      {/* ========================================= */}
+      <BentoCard
+        className="md:col-span-2 min-h-[240px]"
+        locked={!(isPremium || isTrial)}
+        onLockedClick={openPricing}
+      >
+        <div className="flex flex-col items-center justify-center h-full text-center">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center text-3xl shadow-xl mb-5">
+            🗺️
+          </div>
+
+          <h2 className="text-xl font-black text-slate-900 dark:text-white">
+            Mapas
+          </h2>
+
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 mb-5">
+            Revisão visual inteligente.
+          </p>
+
+          <Button
+            onClick={() =>
+              navigate(AppView.STUDY_GUIDE)
+            }
+            className="
+            w-full
+            rounded-2xl
+            bg-gradient-to-r
+            from-emerald-500
+            to-teal-500
+          "
+          >
+            Abrir
+          </Button>
+        </div>
+      </BentoCard>
+    </div>
       </div>
     </div>
   );

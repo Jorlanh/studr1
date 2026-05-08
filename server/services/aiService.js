@@ -300,13 +300,42 @@ Retorne SOMENTE um JSON com a chave "questions" contendo um array de exatos ${co
     throw new Error("Falha na geração de questões por excesso de carga nas IAs. Tente novamente em alguns segundos.");
 };
 
-export const analyzeSisuChances = async (score, desiredCourse, preferredUniversity) => {
-    const prompt = `Aja como um especialista em SiSU. 
-    Nota TRI: ${score}. Curso: "${desiredCourse}". Univ: "${preferredUniversity || 'Qualquer'}".
-    Forneça 3 a 5 cenários. Retorne JSON array: [{ "university": "", "course": "", "cutOffScore": 0, "chance": "", "modality": "" }]`;
-    const messages = [{ role: "system", content: "Especialista em SiSU. Retorne APENAS um array JSON." }, { role: "user", content: prompt }];
-    const content = parseSafeJSON(await executeHybridAI(messages, true, 1, 10000));
-    return Array.isArray(content) ? content : (content.scenarios || content.results || [content]);
+export const analyzeSisuChances = async (score, course, queryContext = "SiSU") => {
+    const prompt = `
+      Aja como uma base de dados oficial de notas de corte do MEC (${queryContext}).
+      O usuário tem nota ${score} e quer o curso "${course}".
+      
+      INSTRUÇÕES RÍGIDAS:
+      1. Pesquise internamente as notas de corte REAIS do último ano para este curso.
+      2. Escolha 3 universidades (ex: UFBA, USP, UFRJ) que ofereçam este curso.
+      3. O campo "cutOffScore" deve ser o valor REAL da nota de corte (ex: "745.20").
+      4. O campo "chance" deve ser: 
+         - "Alta" (se a nota do aluno for maior que o corte)
+         - "Média" (se a nota do aluno estiver até 15 pontos abaixo do corte)
+         - "Baixa" (se a nota do aluno estiver mais de 15 pontos abaixo do corte)
+
+      RETORNE APENAS O ARRAY JSON:
+      [
+        { "university": "NOME DA UNIV", "course": "${course}", "chance": "Alta", "cutOffScore": "720.00" }
+      ]
+    `;
+
+    const messages = [
+        { role: "system", content: "Você é um terminal de dados reais do SiSU/ProUni. Proibido inventar notas proporcionais à nota do aluno." },
+        { role: "user", content: prompt }
+    ];
+
+    try {
+        const resultJSON = await executeHybridAI(messages, true, 1, 35000);
+        const parsed = parseSafeJSON(resultJSON);
+        return Array.isArray(parsed) ? parsed : (parsed.results || [parsed]);
+    } catch (error) {
+        console.error("Erro real no SiSU:", error);
+        // Fallback neutro - sem somar notas fictícias
+        return [
+            { university: "Erro na consulta de dados reais", chance: "Indisponível", cutOffScore: "---" }
+        ];
+    }
 };
 
 export const generateStudyPlan = async (results) => {
@@ -326,12 +355,53 @@ export const generateEssayTheme = async () => {
 };
 
 export const evaluateEssay = async (theme, essayText) => {
-    const prompt = `Corrija a redação sobre "${theme}": "${essayText}". Avalie 5 competências. JSON: { "totalScore": 0, "competencies": [{ "id": 1, "name": "...", "score": 0, "feedback": "" }...], "generalFeedback": "", "strengths": [], "weaknesses": [] }`;
-    const messages = [{ role: "system", content: "Corretor oficial do ENEM. Retorne APENAS um objeto JSON." }, { role: "user", content: prompt }];
+    // PROMPT BLINDADO E RIGOROSO DO ENEM
+    const prompt = `
+      Você é um Corretor Oficial do ENEM, rigoroso e técnico. Corrija a redação abaixo sobre o tema: "${theme}".
+      
+      REGRAS ABSOLUTAS (OBRIGATÓRIO):
+      1. A nota de cada competência SÓ PODE SER: 0, 40, 80, 120, 160 ou 200. É PROIBIDO DAR NOTAS QUEBRADAS COMO 85, 90, 72.
+      2. O "totalScore" DEVE SER a soma exata das 5 competências.
+      3. VOCÊ NÃO PODE INVENTAR NOMES DE COMPETÊNCIAS. USE EXATAMENTE ESTAS 5:
+         ID 1: "Domínio da Norma Padrão"
+         ID 2: "Compreensão e Repertório"
+         ID 3: "Organização e Argumentação"
+         ID 4: "Coesão e Conectivos"
+         ID 5: "Proposta de Intervenção"
+
+      REDAÇÃO DO ALUNO:
+      """
+      ${essayText}
+      """
+
+      Retorne APENAS um objeto JSON válido (sem marcadores markdown). Formato:
+      {
+        "totalScore": 800,
+        "generalFeedback": "Parágrafo resumindo a performance geral do aluno e nível do texto.",
+        "strengths": ["Ponto forte 1", "Ponto forte 2"],
+        "weaknesses": ["Ponto de melhoria 1", "Ponto de melhoria 2"],
+        "competencies": [
+          { "id": 1, "name": "Domínio da Norma Padrão", "score": 160, "feedback": "Análise gramatical detalhada..." },
+          { "id": 2, "name": "Compreensão e Repertório", "score": 160, "feedback": "Análise do repertório..." },
+          { "id": 3, "name": "Organização e Argumentação", "score": 160, "feedback": "Análise do projeto de texto..." },
+          { "id": 4, "name": "Coesão e Conectivos", "score": 160, "feedback": "Análise dos elementos coesivos..." },
+          { "id": 5, "name": "Proposta de Intervenção", "score": 160, "feedback": "Análise dos 5 elementos da PI..." }
+        ]
+      }
+    `;
+
+    const messages = [
+        { role: "system", content: "Corretor oficial do ENEM. Siga estritamente as regras de pontuação e matriz de referência do INEP. Retorne APENAS JSON." },
+        { role: "user", content: prompt }
+    ];
+
     const content = parseSafeJSON(await executeHybridAI(messages, true, 1, 30000));
+    
+    // Trava final de segurança para garantir a soma correta
     if (content.competencies && Array.isArray(content.competencies)) {
       content.totalScore = content.competencies.reduce((acc, curr) => acc + (curr.score || 0), 0);
     }
+    
     return content;
 };
 

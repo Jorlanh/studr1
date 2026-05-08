@@ -300,7 +300,7 @@ const LandingPageV3: React.FC<LandingPageProps> = ({ onStart, onRegister, onLogi
                 {/* Left Side: Copy */}
                 <div className="space-y-8 order-2 lg:order-1 transition-all duration-500 transform">
                   <div className={`inline-flex p-3 rounded-2xl bg-gradient-to-br ${slides[currentSlide].color} shadow-lg shadow-blue-500/20`}>
-                    {React.cloneElement(slides[currentSlide].icon as React.ReactElement, { className: "w-8 h-8 text-white" })}
+                    {React.cloneElement(slides[currentSlide].icon as React.ReactElement<{ className?: string }>, { className: "w-8 h-8 text-white" })}
                   </div>
                   
                   <div className="space-y-4">

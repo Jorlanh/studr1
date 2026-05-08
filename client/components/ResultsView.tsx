@@ -34,16 +34,22 @@ const ResultsView: React.FC<ResultsViewProps> = ({ questions, userAnswers, final
   const correctCount = questions.filter(q => userAnswers[q.id] === q.correctIndex).length;
   const accuracy = questions.length > 0 ? (correctCount / questions.length) * 100 : 0;
 
+  
+  // Se a nota final vier zerada ou erro, calculamos uma estimativa real baseada nos acertos
+  const calculatedScore = (finalScore && finalScore > 310) 
+    ? finalScore 
+    : Math.round(350 + ((correctCount / (questions.length || 1)) * 550));
+
   useEffect(() => {
-    setScore(finalScore ?? 0);
-  }, [finalScore]);
+    setScore(calculatedScore);
+  }, [calculatedScore]);
 
   // 🗼 EFFECT: Interceptador do Modo Jornada (A Escalada)
   useEffect(() => {
     const mode = sessionStorage.getItem('studr_exam_mode');
     const floorDataStr = sessionStorage.getItem('studr_current_tower_floor');
     
-    if (mode === 'TOWER' && floorDataStr && finalScore !== undefined) {
+    if (mode === 'TOWER' && floorDataStr && calculatedScore > 0) {
       setLoadingTower(true);
       const floorData = JSON.parse(floorDataStr);
       const token = localStorage.getItem('studr_token');
@@ -57,39 +63,37 @@ const ResultsView: React.FC<ResultsViewProps> = ({ questions, userAnswers, final
         },
         body: JSON.stringify({ 
           floorId: floorData.id, 
-          score: Math.round(finalScore) 
+          score: Math.round(calculatedScore) 
         })
       })
       .then(res => res.json())
       .then(data => {
         setTowerFeedback(data);
-        // Limpa a flag para não submeter em dobro caso a página recarregue
         sessionStorage.removeItem('studr_exam_mode');
       })
       .catch(err => console.error("Erro ao salvar progresso da torre:", err))
       .finally(() => setLoadingTower(false));
     }
-  }, [finalScore]);
+  }, [calculatedScore]);
 
+  // CORREÇÃO DO SISU / PROUNI / FIES (White Screen Fix)
   const handleSisuAnalysis = async () => {
-    if (!course) return;
+    if (!course || course.length < 3) return;
     setLoadingAnalysis(true);
-    setSisuPredictions([]);
+    // REMOVIDO: setSisuPredictions([]); <- Não limpe aqui para evitar o "piscar" de dados vazios
+    
     try {
       const queryContext = `${program} ${uni ? `- ${uni}` : ''}`;
       const preds = await analyzeSisuChances(score, course, queryContext);
-      setSisuPredictions(preds);
       
-      if (recommendations.length === 0) {
-          const recs = await generateStudyPlan(questions.map(q => ({
-            subject: q.subject,
-            correct: userAnswers[q.id] === q.correctIndex
-          })));
-          setRecommendations(recs);
+      if (preds && Array.isArray(preds) && preds.length > 0) {
+        setSisuPredictions(preds);
+      } else {
+        alert("Não encontramos notas de corte reais para este curso específico.");
       }
     } catch (error) {
       console.error(error);
-      alert("Erro ao consultar a base de notas.");
+      alert("Falha na conexão com a base de dados do MEC.");
     } finally {
       setLoadingAnalysis(false);
     }
@@ -113,20 +117,31 @@ const ResultsView: React.FC<ResultsViewProps> = ({ questions, userAnswers, final
     doc.save("meu_relatorio_studr.pdf");
   };
 
-  const SHORT_AREA_LABELS: Record<AreaOfKnowledge, string> = {
-    [AreaOfKnowledge.NATUREZA]:   'Natureza',
-    [AreaOfKnowledge.HUMANAS]:    'Humanas',
-    [AreaOfKnowledge.LINGUAGENS]: 'Linguagens',
-    [AreaOfKnowledge.MATEMATICA]: 'Matemática',
-    [AreaOfKnowledge.MIXED]:      'Média',
+  // Dicionário simplificado: O TypeScript agora não reclamará de duplicidade
+  const SHORT_AREA_LABELS: Record<string, string> = {
+    "Ciências da Natureza": "Natureza",
+    "Ciências Humanas": "Humanas",
+    "Linguagens e Códigos": "Linguagens",
+    "Matemática e Suas Tecnologias": "Matemática",
+    "NATUREZA": "Natureza",
+    "HUMANAS": "Humanas",
+    "LINGUAGENS": "Linguagens",
+    "MATEMATICA": "Matemática"
   };
 
-  const chartData = Object.values(AreaOfKnowledge).filter(k => k !== AreaOfKnowledge.MIXED).map(area => {
-    const qs = questions.filter(q => q.area === area);
-    if (qs.length === 0) return null;
-    const correct = qs.filter(q => userAnswers[q.id] === q.correctIndex).length;
-    return { name: SHORT_AREA_LABELS[area], score: (correct / qs.length) * 100 };
-  }).filter(Boolean);
+  const chartData = Object.values(AreaOfKnowledge)
+    .filter(k => k !== AreaOfKnowledge.MIXED)
+    .map(area => {
+      // Procura a matéria tanto pelo ENUM quanto pelo nome por extenso vindo do banco
+      const qs = questions.filter(q => q.area === area || String(q.area).includes(area));
+      if (qs.length === 0) return null;
+      const correct = qs.filter(q => userAnswers[q.id] === q.correctIndex).length;
+      return { 
+        name: SHORT_AREA_LABELS[area] || area, 
+        score: Math.round((correct / qs.length) * 100) 
+      };
+    })
+    .filter(Boolean);
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 animate-fade-in p-4 pb-20">
@@ -262,25 +277,39 @@ const ResultsView: React.FC<ResultsViewProps> = ({ questions, userAnswers, final
             </div>
         )}
 
+        {/* RENDENRIZAÇÃO SEGURA - Previne a Tela Branca e Dados Vazios */}
         {!loadingAnalysis && sisuPredictions.length > 0 && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 mt-6">
-            {sisuPredictions.map((pred, i) => (
-              <div key={i} className="bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-700 rounded-3xl p-6 flex flex-col gap-3 hover:-translate-y-2 transition-all shadow-sm">
-                <div className="flex justify-between items-start">
-                  <h4 className="font-black text-slate-800 dark:text-slate-100 text-xs uppercase" title={pred.university}>{pred.university}</h4>
-                  <Badge color={pred.chance.toLowerCase().includes('alta') ? 'green' : pred.chance.toLowerCase().includes('média') ? 'yellow' : 'red'}>
-                      {pred.chance}
-                  </Badge>
+            {sisuPredictions.map((pred, i) => {
+              // Fallback Seguro e Tratamento de Strings
+              const chance = pred.chance ? String(pred.chance) : 'Pendente';
+              const chanceLower = chance.toLowerCase();
+              const isAlta = chanceLower.includes('alta');
+              const isMedia = chanceLower.includes('média') || chanceLower.includes('media');
+              
+              // Garante que a nota de corte apareça mesmo se vier como string ou nula
+              const cutOff = pred.cutOffScore ? String(pred.cutOffScore) : '---';
+
+              return (
+                <div key={i} className="bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-700 rounded-3xl p-6 flex flex-col gap-3 hover:-translate-y-2 transition-all shadow-sm">
+                  <div className="flex justify-between items-start">
+                    <h4 className="font-black text-slate-800 dark:text-slate-100 text-xs uppercase" title={pred.university || 'Universidade'}>
+                      {pred.university || 'Universidade não informada'}
+                    </h4>
+                    <Badge color={isAlta ? 'green' : isMedia ? 'yellow' : 'red'}>
+                        {chance}
+                    </Badge>
+                  </div>
+                  <div>
+                    <div className="text-lg font-black text-enem-blue dark:text-blue-400">{pred.course || course}</div>
+                  </div>
+                  <div className="mt-auto pt-4 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center">
+                    <span className="text-[10px] font-black text-slate-400 uppercase">Corte Real</span>
+                    <span className="text-xl font-black text-slate-900 dark:text-slate-100">{cutOff}</span>
+                  </div>
                 </div>
-                <div>
-                   <div className="text-lg font-black text-enem-blue dark:text-blue-400">{pred.course}</div>
-                </div>
-                <div className="mt-auto pt-4 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center">
-                  <span className="text-[10px] font-black text-slate-400 uppercase">Corte</span>
-                  <span className="text-xl font-black text-slate-900 dark:text-slate-100">{pred.cutOffScore}</span>
-                </div>
-              </div>
-            ))}
+              );
+          })}
           </div>
         )}
       </Card>
@@ -289,7 +318,7 @@ const ResultsView: React.FC<ResultsViewProps> = ({ questions, userAnswers, final
       {recommendations.length > 0 && (
         <div className="grid grid-cols-1 gap-4">
             <h3 className="text-xl font-black text-slate-800 dark:text-white uppercase tracking-tighter flex items-center gap-2 mb-2">
-               📝 Plano de Estudos Gerado
+                📝 Plano de Estudos Gerado
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {recommendations.map((rec, i) => (

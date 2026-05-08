@@ -270,7 +270,7 @@ const GamificationView: React.FC<GamificationViewProps> = ({ onBack, onReviewErr
               <span className="text-sm text-gray-500 dark:text-slate-400">Questões certas por matéria</span>
             </div>
             <div className="space-y-8">
-              {(Object.keys(GAMIFICATION_SUBJECTS) as AreaOfKnowledge[]).map((area) => (
+              {(Object.keys(GAMIFICATION_SUBJECTS) as Array<keyof typeof GAMIFICATION_SUBJECTS>).map((area) => (
                 <div key={area} className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-gray-100 dark:border-slate-800">
                   <h4 className="font-bold text-enem-blue dark:text-blue-400 mb-4 border-b border-gray-200 dark:border-slate-700 pb-2">{area}</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">

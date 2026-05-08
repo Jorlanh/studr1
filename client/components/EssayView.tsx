@@ -245,45 +245,46 @@ const EssayView: React.FC<EssayViewProps> = ({ onBack, onSuccess }) => {
               />
             </div>
 
+            {/* 🚨 Painel de Validação e Envio 🚨 */}
             {writingStarted && (
-              <div className="mt-8 flex flex-col md:flex-row gap-6 items-center justify-between">
-                <div className="flex items-center gap-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/20 px-4 py-2 rounded-xl">
-                   <span className="text-xl">⚠️</span>
-                   <p className="text-[10px] md:text-xs text-amber-700 dark:text-amber-400 font-medium leading-tight">
-                      Garanta uma tese clara na introdução e use conectivos entre os parágrafos para aumentar sua nota na competência 4.
-                   </p>
-                </div>
+              <div className="mt-6 flex flex-col md:flex-row gap-4 items-end justify-between bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                 
+                 <div className="flex flex-col gap-1 w-full md:w-auto">
+                    {/* Caso o aluno não atenda aos requisitos (Abaixo do mínimo ou Estourou o Máximo) */}
+                    {(!canSubmit || estimatedLines > MAX_LINHAS) ? (
+                        <>
+                            {wordCount < MIN_PALAVRAS && (
+                                <p className="text-xs text-amber-600 dark:text-amber-400 font-bold">⚠️ Faltam {MIN_PALAVRAS - wordCount} palavras para o mínimo exigido.</p>
+                            )}
+                            {estimatedLines < MIN_LINHAS && wordCount >= MIN_PALAVRAS && (
+                                <p className="text-xs text-amber-600 dark:text-amber-400 font-bold">⚠️ O texto está muito curto. Escreva pelo menos {MIN_LINHAS} linhas.</p>
+                            )}
+                            {estimatedLines > MAX_LINHAS && (
+                                <p className="text-xs text-rose-600 dark:text-rose-400 font-bold">❌ Atenção: Redação estourou as {MAX_LINHAS} linhas! Reduza seu texto.</p>
+                            )}
+                            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 font-medium">
+                                Metas: Mín. {MIN_PALAVRAS} palavras ({wordCount}/{MIN_PALAVRAS}) | {MIN_LINHAS} a {MAX_LINHAS} linhas ({estimatedLines})
+                            </p>
+                        </>
+                    ) : (
+                        <div className="flex items-center gap-2">
+                           <span className="text-xl">✅</span>
+                           <div>
+                              <p className="text-sm font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Pronto para Enviar</p>
+                              <p className="text-[10px] text-slate-400 font-medium">Limites oficiais do INEP respeitados.</p>
+                           </div>
+                        </div>
+                    )}
+                 </div>
 
-                <div className="flex flex-col items-end gap-2 w-full md:w-auto">
-                   {!canSubmit && (
-                     <div className="flex flex-col items-end gap-1">
-                       {wordCount < MIN_PALAVRAS && (
-                         <p className="text-[10px] text-amber-500 font-medium">
-                           Faltam {MIN_PALAVRAS - wordCount} palavras.
-                         </p>
-                       )}
-                       {estimatedLines < MIN_LINHAS && (
-                         <p className="text-[10px] text-amber-500 font-medium">
-                           Texto ainda curto — escreva pelo menos {MIN_LINHAS} linhas.
-                         </p>
-                       )}
-                       <p className="text-[10px] text-slate-400 dark:text-slate-500">
-                         Mínimo: {MIN_PALAVRAS} palavras ({wordCount}/{MIN_PALAVRAS}) e {MIN_LINHAS} linhas ({estimatedLines}/{MIN_LINHAS})
-                       </p>
-                     </div>
-                   )}
-                   {canSubmit && estimatedLines > MAX_LINHAS && (
-                     <p className="text-[10px] text-amber-500 font-medium">
-                       Você passou de {MAX_LINHAS} linhas (~{estimatedLines} estimadas). No ENEM oficial, texto acima disso é cortado.
-                     </p>
-                   )}
-                   {canSubmit && estimatedLines <= MAX_LINHAS && (
-                     <p className="text-[10px] text-green-500 font-medium">Pronto para corrigir!</p>
-                   )}
-                   <Button onClick={handleSubmit} variant="primary" className="w-full md:w-auto px-12 py-4 shadow-xl shadow-enem-blue/20 text-md uppercase font-black tracking-widest" loading={loading} disabled={!canSubmit}>
-                    🚀 Corrigir Agora
-                  </Button>
-                </div>
+                 {/* O botão também travará se as linhas estimadas forem maiores que MAX_LINHAS */}
+                 <Button 
+                    onClick={handleSubmit} 
+                    disabled={!canSubmit || estimatedLines > MAX_LINHAS || loading} 
+                    className={`w-full md:w-auto py-4 px-8 font-black uppercase tracking-widest shadow-xl transition-all ${(canSubmit && estimatedLines <= MAX_LINHAS) ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/30 text-white' : 'bg-slate-300 text-slate-500 dark:bg-slate-700 dark:text-slate-400 cursor-not-allowed opacity-80'}`}
+                 >
+                    {loading ? 'Corrigindo IA...' : 'Enviar Redação'}
+                 </Button>
               </div>
             )}
           </div>
@@ -299,9 +300,9 @@ const EssayView: React.FC<EssayViewProps> = ({ onBack, onSuccess }) => {
                 <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-3xl"></div>
                 <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-blue-400/10 rounded-full blur-3xl"></div>
                 
-                <Badge color="yellow" className="mb-4 bg-yellow-400/20 text-yellow-200 border border-yellow-400/30">Desempenho Estimado</Badge>
-                <div className="text-[7rem] font-black leading-none mb-2 tracking-tighter">{result.totalScore}</div>
-                <div className="text-sm font-bold opacity-60 uppercase tracking-widest">Pontos TRI</div>
+                <Badge color="yellow" className="mb-4 relative z-10 bg-yellow-400/20 text-yellow-300 border-yellow-400/30">Nota Final Oficial</Badge>
+                <div className="text-[7rem] font-black leading-none tracking-tighter relative z-10">{result.totalScore}</div>
+                <div className="text-sm font-bold opacity-60 uppercase tracking-widest relative z-10">PONTOS</div>
                 
                 <div className="mt-8 w-full bg-white/10 rounded-2xl p-4 border border-white/10">
                    <div className="flex justify-between text-xs font-bold mb-2">
