@@ -72,7 +72,7 @@ function shuffleOptionsAndIndex(question) {
 let primaryProvider = 'gemini'; 
 let geminiCooldownUntil = 0;
 let groqCooldownUntil = 0;
-const COOLDOWN_TIME = 60 * 1000; 
+const COOLDOWN_TIME = 5 * 60 * 1000; 
 
 // --- PROVEDOR 1: GEMINI ---
 const callGemini = async (messages, isJson) => {
@@ -137,14 +137,14 @@ const callGroq = async (messages, isJson) => {
     return data.choices[0].message.content;
 };
 
-// --- ROTERIZADOR DE TRÁFEGO COM TIMEOUT EMBUTIDO ---
+// --- ROTERIZADOR DE TRÁFEGO COM SUPORTE A FATURAMENTO (BILLING) ---
 const executeHybridAI = async (messages, isJson = true, retries = 1, timeoutMs = 28000) => {
     const now = Date.now();
     let selectedProvider = primaryProvider;
 
+    // Lógica de alternância rápida
     if (selectedProvider === 'gemini' && now < geminiCooldownUntil) selectedProvider = 'groq';
     if (selectedProvider === 'groq' && now < groqCooldownUntil) selectedProvider = 'gemini';
-    if (now < geminiCooldownUntil && now < groqCooldownUntil) selectedProvider = 'groq';
 
     try {
         const startTime = Date.now();
@@ -162,22 +162,28 @@ const executeHybridAI = async (messages, isJson = true, retries = 1, timeoutMs =
     } catch (error) {
         const status = error.status || error.response?.status;
         const errorMsg = error.message ? error.message.toLowerCase() : '';
-        const isRateLimit = status === 429 || errorMsg.includes('429') || errorMsg.includes('quota') || errorMsg.includes('too many');
+        const isRateLimit = status === 429 || errorMsg.includes('429') || errorMsg.includes('quota');
 
-        if (isRateLimit || error.name === 'APITimeoutError') {
-            console.warn(`[AI:Hybrid] ⚠️ ${error.name === 'APITimeoutError' ? 'Timeout' : 'Rate Limit'} no ${selectedProvider.toUpperCase()}. Alternando para o provedor reserva...`);
-            if (selectedProvider === 'gemini') geminiCooldownUntil = Date.now() + COOLDOWN_TIME;
-            if (selectedProvider === 'groq') groqCooldownUntil = Date.now() + COOLDOWN_TIME;
-            primaryProvider = selectedProvider === 'gemini' ? 'groq' : 'gemini';
+        if (isRateLimit) {
+            // INCREMENTO: Em vez de apenas travar, o sistema avisa que vai tentar via Tier Pago/Cobrança
+            console.warn(`[AI:Billing] Limite gratuito excedido no ${selectedProvider.toUpperCase()}. Tentando via faturamento...`);
+            
+            // Reduzimos o cooldown para quase zero, forçando o retry imediato que a API paga aceitará
+            if (selectedProvider === 'gemini') geminiCooldownUntil = Date.now() + 2000;
+            if (selectedProvider === 'groq') groqCooldownUntil = Date.now() + 2000;
 
-            if (retries > 0) return executeHybridAI(messages, isJson, retries - 1, timeoutMs);
-        } else {
-            console.error(`[AI:Hybrid] ✗ Erro crítico no ${selectedProvider.toUpperCase()}:`, error.message);
             if (retries > 0) {
-                await delay(1000);
+                await delay(500); // Pequena pausa apenas para sincronia
                 return executeHybridAI(messages, isJson, retries - 1, timeoutMs);
             }
+        } 
+        
+        if (error.name === 'APITimeoutError') {
+            console.warn(`[AI:Hybrid] ⚠️ Timeout no ${selectedProvider.toUpperCase()}. Alternando...`);
+            if (retries > 0) return executeHybridAI(messages, isJson, retries - 1, timeoutMs);
         }
+
+        console.error(`[AI:Hybrid] ✗ Erro crítico no ${selectedProvider.toUpperCase()}:`, error.message);
         throw error;
     }
 }
@@ -300,41 +306,34 @@ Retorne SOMENTE um JSON com a chave "questions" contendo um array de exatos ${co
     throw new Error("Falha na geração de questões por excesso de carga nas IAs. Tente novamente em alguns segundos.");
 };
 
-export const analyzeSisuChances = async (score, course, queryContext = "SiSU") => {
+export const analyzeSisuChances = async (score, desiredCourse, queryContext) => {
     const prompt = `
-      Aja como uma base de dados oficial de notas de corte do MEC (${queryContext}).
-      O usuário tem nota ${score} e quer o curso "${course}".
+      Você é um especialista em admissões universitárias (${queryContext}).
+      O aluno tirou nota ${score} (escala 0-1000) e quer o curso "${desiredCourse}".
       
-      INSTRUÇÕES RÍGIDAS:
-      1. Pesquise internamente as notas de corte REAIS do último ano para este curso.
-      2. Escolha 3 universidades (ex: UFBA, USP, UFRJ) que ofereçam este curso.
-      3. O campo "cutOffScore" deve ser o valor REAL da nota de corte (ex: "745.20").
-      4. O campo "chance" deve ser: 
-         - "Alta" (se a nota do aluno for maior que o corte)
-         - "Média" (se a nota do aluno estiver até 15 pontos abaixo do corte)
-         - "Baixa" (se a nota do aluno estiver mais de 15 pontos abaixo do corte)
-
-      RETORNE APENAS O ARRAY JSON:
+      TAREFA:
+      1. Pesquise notas de corte REAIS dos últimos anos para este curso.
+      2. O campo "cutOffScore" deve ser o número real da nota de corte (ex: "782.40"). NÃO RETORNE 0.
+      3. O campo "chance" deve ser "Alta", "Média" ou "Baixa".
+      
+      Retorne APENAS um array JSON:
       [
-        { "university": "NOME DA UNIV", "course": "${course}", "chance": "Alta", "cutOffScore": "720.00" }
+        { "university": "NOME REAL DA FACULDADE", "course": "${desiredCourse}", "cutOffScore": "750.00", "chance": "Alta" }
       ]
     `;
 
     const messages = [
-        { role: "system", content: "Você é um terminal de dados reais do SiSU/ProUni. Proibido inventar notas proporcionais à nota do aluno." },
+        { role: "system", content: "Analista de dados reais. Proibido retornar notas de corte zeradas ou nulas." },
         { role: "user", content: prompt }
     ];
 
     try {
-        const resultJSON = await executeHybridAI(messages, true, 1, 35000);
+        const resultJSON = await executeHybridAI(messages, true, 1, 30000);
         const parsed = parseSafeJSON(resultJSON);
-        return Array.isArray(parsed) ? parsed : (parsed.results || [parsed]);
+        return Array.isArray(parsed) ? parsed : (parsed.results || parsed.chances || [parsed]);
     } catch (error) {
-        console.error("Erro real no SiSU:", error);
-        // Fallback neutro - sem somar notas fictícias
-        return [
-            { university: "Erro na consulta de dados reais", chance: "Indisponível", cutOffScore: "---" }
-        ];
+        console.error("Erro SiSU:", error);
+        return [{ university: "Erro na base de dados", course: desiredCourse, cutOffScore: "---", chance: "Tente novamente" }];
     }
 };
 

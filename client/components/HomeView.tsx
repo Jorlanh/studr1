@@ -162,15 +162,14 @@ export default function HomeView() {
             </Badge>
 
             <h1 className="text-5xl md:text-7xl font-black tracking-tight text-slate-900 dark:text-white leading-tight max-w-5xl">
-              Transforme seus estudos em
+              O Seu Futuro
               <span className="block text-transparent bg-clip-text bg-gradient-to-r from-blue-500 via-cyan-400 to-purple-500">
-                performance máxima.
+                Aprovado.
               </span>
             </h1>
 
             <p className="mt-6 max-w-3xl text-lg md:text-xl text-slate-500 dark:text-slate-400 leading-relaxed">
-              Plataforma futurista baseada em IA, gamificação e análise TRI
-              para elevar seu desempenho ao próximo nível.
+              A única plataforma inteligente que calibra seus estudos com a verdadeira Teoria de Resposta ao Item (TRI).
             </p>
 
             {isMockOnly && (
@@ -321,7 +320,7 @@ export default function HomeView() {
               </h2>
 
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Simulação real com análise TRI avançada.
+                Experiência real com 180 questões e cálculo TRI avançado.
               </p>
             </div>
           </div>

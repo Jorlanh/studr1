@@ -35,10 +35,9 @@ const ResultsView: React.FC<ResultsViewProps> = ({ questions, userAnswers, final
   const accuracy = questions.length > 0 ? (correctCount / questions.length) * 100 : 0;
 
   
-  // Se a nota final vier zerada ou erro, calculamos uma estimativa real baseada nos acertos
-  const calculatedScore = (finalScore && finalScore > 310) 
-    ? finalScore 
-    : Math.round(350 + ((correctCount / (questions.length || 1)) * 550));
+  // 🔥 CORREÇÃO REAL: Pontuação proporcional pura (0 a 1000)
+  // Se acertar 0, a nota é 0. Se acertar tudo, é 1000.
+  const calculatedScore = Math.round((correctCount / (questions.length || 1)) * 1000);
 
   useEffect(() => {
     setScore(calculatedScore);
@@ -117,31 +116,38 @@ const ResultsView: React.FC<ResultsViewProps> = ({ questions, userAnswers, final
     doc.save("meu_relatorio_studr.pdf");
   };
 
-  // Dicionário simplificado: O TypeScript agora não reclamará de duplicidade
+  // 1. Dicionário de normalização (Para garantir o nome bonito no gráfico)
   const SHORT_AREA_LABELS: Record<string, string> = {
-    "Ciências da Natureza": "Natureza",
-    "Ciências Humanas": "Humanas",
-    "Linguagens e Códigos": "Linguagens",
-    "Matemática e Suas Tecnologias": "Matemática",
     "NATUREZA": "Natureza",
     "HUMANAS": "Humanas",
     "LINGUAGENS": "Linguagens",
     "MATEMATICA": "Matemática"
   };
 
-  const chartData = Object.values(AreaOfKnowledge)
-    .filter(k => k !== AreaOfKnowledge.MIXED)
-    .map(area => {
-      // Procura a matéria tanto pelo ENUM quanto pelo nome por extenso vindo do banco
-      const qs = questions.filter(q => q.area === area || String(q.area).includes(area));
-      if (qs.length === 0) return null;
-      const correct = qs.filter(q => userAnswers[q.id] === q.correctIndex).length;
-      return { 
-        name: SHORT_AREA_LABELS[area] || area, 
-        score: Math.round((correct / qs.length) * 100) 
-      };
-    })
-    .filter(Boolean);
+  // 2. Lógica de extração com normalização de texto (Busca por aproximação)
+  const chartData = [
+    { id: "NATUREZA", search: "natureza" },
+    { id: "HUMANAS", search: "humana" },
+    { id: "LINGUAGENS", search: "linguagem" },
+    { id: "MATEMATICA", search: "matemát" }
+  ].map(item => {
+    // Procura na questão ignorando acentos e maiúsculas
+    const qs = questions.filter(q => {
+      const areaText = String(q.area || "").toLowerCase();
+      const subjectText = String(q.subject || "").toLowerCase();
+      return areaText.includes(item.search) || subjectText.includes(item.search);
+    });
+
+    if (qs.length === 0) return null;
+
+    const correct = qs.filter(q => userAnswers[q.id] === q.correctIndex).length;
+    
+    return { 
+      name: SHORT_AREA_LABELS[item.id], 
+      score: Math.round((correct / qs.length) * 100) 
+    };
+  })
+  .filter((item): item is { name: string; score: number } => item !== null);
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 animate-fade-in p-4 pb-20">
@@ -281,7 +287,6 @@ const ResultsView: React.FC<ResultsViewProps> = ({ questions, userAnswers, final
         {!loadingAnalysis && sisuPredictions.length > 0 && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 mt-6">
             {sisuPredictions.map((pred, i) => {
-              // Fallback Seguro e Tratamento de Strings
               const chance = pred.chance ? String(pred.chance) : 'Pendente';
               const chanceLower = chance.toLowerCase();
               const isAlta = chanceLower.includes('alta');
@@ -304,7 +309,7 @@ const ResultsView: React.FC<ResultsViewProps> = ({ questions, userAnswers, final
                     <div className="text-lg font-black text-enem-blue dark:text-blue-400">{pred.course || course}</div>
                   </div>
                   <div className="mt-auto pt-4 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center">
-                    <span className="text-[10px] font-black text-slate-400 uppercase">Corte Real</span>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Corte Real</span>
                     <span className="text-xl font-black text-slate-900 dark:text-slate-100">{cutOff}</span>
                   </div>
                 </div>
