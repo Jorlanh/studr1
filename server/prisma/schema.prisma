@@ -241,30 +241,42 @@ model AffiliateLink {
   user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-model UserInfiniteTower {
-  id           String       @id @default(uuid())
-  userId       String       @unique
-  highestFloor Int          @default(1) // O andar atual liberado
-  currentLives Int          @default(3) // Vidas para dar tensão (opcional para o futuro)
+// 🗼 INCREMENTO: MODO TORRE INFINITA E PRÉDIOS
 
-  user         User         @relation(fields: [userId], references: [id])
-  floors       TowerFloor[]
+model UserInfiniteTower {
+  id              String       @id @default(uuid())
+  userId          String       @unique
+  currentBuilding Int          @default(1) // O prédio atual que o usuário está escalando
+  currentFloor    Int          @default(1) // O andar atual dentro do prédio
+  totalXp         Int          @default(0) // XP acumulado na Torre
+  currentLives    Int          @default(3) // Vidas para dar tensão (opcional para o futuro)
+
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  floors          TowerFloor[]
 }
 
 model TowerFloor {
   id          String   @id @default(uuid())
-  towerId     String
-  floorNumber Int
-  type        String   // "QUIZ" (Múltipla Escolha) ou "ESSAY" (Redação)
-  topic       String   // Tema da matéria (se QUIZ) ou Tema da Redação (se ESSAY)
+  towerUserId String   @map("towerId") // Mapeado para manter o nome da coluna no BD
+  building    Int      // A qual prédio este andar pertence (1 a 100)
+  floorNumber Int      // Qual o número do andar dentro do prédio (1 a 5)
+  
+  type        String   @default("QUIZ") // "QUIZ" (Múltipla Escolha) ou "ESSAY" (Redação)
+  topic       String?  // Tema da matéria (se QUIZ) ou Tema da Redação (se ESSAY)
   area        String?  // HUMANAS, NATUREZA... (nulo se for redação)
+  
   targetScore Int      // Pontuação mínima exigida (Ex: TRI 450 ou Redação 600)
-  isBoss      Boolean  @default(false) // Se for Boss, dá mais XP
-
+  isBoss      Boolean  @default(false) // Se for Boss (geralmente andar 5), dá mais XP
+  
+  isLocked    Boolean  @default(true)  // Se o andar ainda está trancado
+  isCompleted Boolean  @default(false) // Se já passou desse andar (equivalente a completed)
+  
   stars       Int      @default(0)     // 1, 2 ou 3 estrelas
-  completed   Boolean  @default(false) // Se já passou desse andar
-  bestScore   Int      @default(0)     // Maior nota que o aluno já tirou aqui
+  highScore   Int      @default(0)     // Maior nota tirada (substitui bestScore para alinhar com backend)
   attempts    Int      @default(0)     // Quantas vezes tentou passar
 
-  tower       UserInfiniteTower @relation(fields: [towerId], references: [id], onDelete: Cascade)
+  tower       UserInfiniteTower @relation(fields: [towerUserId], references: [id], onDelete: Cascade)
+
+  // Garante que o usuário não tenha o mesmo andar duplicado no mesmo prédio
+  @@unique([towerUserId, building, floorNumber])
 }

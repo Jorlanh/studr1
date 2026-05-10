@@ -1,142 +1,226 @@
 import { PrismaClient } from '@prisma/client';
-
 const prisma = new PrismaClient();
 
-const ESSAY_THEMES = [
-  "Os impactos da inteligência artificial no mercado de trabalho brasileiro",
-  "O estigma associado às doenças mentais na sociedade",
-  "A democratização do acesso à cultura no Brasil",
-  "Caminhos para combater a evasão escolar no ensino médio",
-  "A importância da educação financeira nas escolas"
+// --- DEFINIÇÃO DOS DISTRITOS (MAPA GLOBAL) ---
+const DISTRICTS = [
+    { name: "Distrito Inicial", startBldg: 1, endBldg: 9, theme: "bg-emerald-50" },
+    { name: "Cidade Base", startBldg: 10, endBldg: 24, theme: "bg-blue-50" },
+    { name: "Zona Intermediária", startBldg: 25, endBldg: 44, theme: "bg-indigo-50" },
+    { name: "Cidade Elite", startBldg: 45, endBldg: 69, theme: "bg-purple-50" },
+    { name: "Complexo Nacional", startBldg: 70, endBldg: 89, theme: "bg-slate-900 text-white" },
+    { name: "Torre Suprema", startBldg: 90, endBldg: 99, theme: "bg-black text-yellow-500" },
+    { name: "Torre dos 1000 Pontos", startBldg: 100, endBldg: 100, theme: "bg-gradient-to-r from-yellow-600 to-amber-900 text-white" }
 ];
 
-// ─── LÓGICA DE PRÉDIOS (CANDY CRUSH / DUOLINGO) ──────────────────────────────
-function generateFloorConfig(floorNumber) {
-  // A cada 5 andares, formamos 1 Prédio (Mundo)
-  const predio = Math.ceil(floorNumber / 5); 
-  const posicaoNoPredio = floorNumber % 5; // Retorna 1, 2, 3, 4 ou 0 (que é o 5º)
-
-  let area, type, isBoss, topic;
-
-  // A dificuldade cresce a cada Prédio novo!
-  const targetTriBase = 350 + (predio * 40); 
-  const targetRedacaoBase = 500 + (predio * 50);
-
-  // Ordem Fixa de Matérias por Andar
-  if (posicaoNoPredio === 1) {
-    area = 'LINGUAGENS'; type = 'QUIZ'; isBoss = false; topic = 'Interpretação e Literatura';
-  } else if (posicaoNoPredio === 2) {
-    area = 'HUMANAS'; type = 'QUIZ'; isBoss = false; topic = 'História e Sociedade';
-  } else if (posicaoNoPredio === 3) {
-    area = 'NATUREZA'; type = 'QUIZ'; isBoss = false; topic = 'Biologia, Física e Química';
-  } else if (posicaoNoPredio === 4) {
-    area = 'MATEMATICA'; type = 'QUIZ'; isBoss = false; topic = 'Cálculos e Geometria Plana';
-  } else {
-    // Posição 0 (Andar 5, 10, 15...) é sempre a Redação do Chefão para mudar de Prédio!
-    area = null; type = 'ESSAY'; isBoss = true; topic = ESSAY_THEMES[(predio - 1) % ESSAY_THEMES.length];
-  }
-
-  // Define a nota mínima para não reprovar de andar
-  const targetScore = isBoss ? Math.min(targetRedacaoBase, 960) : Math.min(targetTriBase, 800);
-
-  return { type, topic, area, targetScore, isBoss };
+// --- MOTOR DE CÁLCULO DE QUESTÕES POR PRÉDIO ---
+// Implementa exatamente a escala solicitada: do Prédio 1 (5q) até Prédio 90+ (120q)
+function calculateQuestionsForBuilding(buildingNum) {
+    if (buildingNum < 2) return 5;
+    if (buildingNum < 3) return 6;
+    if (buildingNum < 4) return 7;
+    if (buildingNum < 5) return 8;
+    if (buildingNum < 10) return 9;
+    if (buildingNum < 15) return 12;
+    if (buildingNum < 20) return 15;
+    if (buildingNum < 25) return 18;
+    if (buildingNum < 30) return 22;
+    if (buildingNum < 35) return 25;
+    if (buildingNum < 40) return 30;
+    if (buildingNum < 45) return 35;
+    if (buildingNum < 50) return 40;
+    if (buildingNum < 60) return 45;
+    if (buildingNum < 70) return 60;
+    if (buildingNum < 80) return 75;
+    if (buildingNum < 90) return 90;
+    if (buildingNum < 100) return 120;
+    return 180; // Prédio 100 = Simulado ENEM Completo
 }
 
-function calculateStars(type, score, targetScore) {
-  if (score < targetScore) return 0; // Se tirou menos que a meta, 0 estrelas e REPROVADO
-  const margin2Stars = type === 'ESSAY' ? 100 : 80;
-  const margin3Stars = type === 'ESSAY' ? 200 : 150;
-
-  if (score >= targetScore + margin3Stars) return 3;
-  if (score >= targetScore + margin2Stars) return 2;
-  return 1;
+// --- MOTOR DE CÁLCULO DE DIFICULDADE (TRI ALVO) ---
+function calculateTargetScoreForBuilding(buildingNum) {
+    // Começa em ~400 e termina em ~950 (Elite lendária)
+    const baseScore = 400;
+    const maxScore = 950;
+    const increment = (maxScore - baseScore) / 100;
+    return Math.floor(baseScore + (buildingNum * increment));
 }
 
-export async function getUserTower(userId) {
-  let tower = await prisma.userInfiniteTower.findUnique({
-    where: { userId },
-    include: { floors: { orderBy: { floorNumber: 'asc' } } }
-  });
-
-  if (!tower) {
-    tower = await prisma.userInfiniteTower.create({ data: { userId, highestFloor: 1 } });
-  }
-
-  // Savepoint: Garante que o andar atual exista
-  const currentFloorExists = tower.floors?.find(f => f.floorNumber === tower.highestFloor);
-  if (!currentFloorExists) {
-    const config = generateFloorConfig(tower.highestFloor);
-    await prisma.towerFloor.create({
-      data: { towerId: tower.id, floorNumber: tower.highestFloor, ...config }
-    });
-    tower = await prisma.userInfiniteTower.findUnique({
-      where: { userId }, include: { floors: { orderBy: { floorNumber: 'asc' } } }
-    });
-  }
-  return tower;
+// Função para identificar o distrito de um prédio
+function getDistrictForBuilding(buildingNum) {
+    return DISTRICTS.find(d => buildingNum >= d.startBldg && buildingNum <= d.endBldg) || DISTRICTS[0];
 }
 
-export async function submitFloorResult(userId, floorId, score) {
-  const floor = await prisma.towerFloor.findUnique({ where: { id: floorId }, include: { tower: true } });
-  if (!floor || floor.tower.userId !== userId) throw new Error("Andar inválido.");
-
-  // Se for MENOR que a meta, isWin é false e ele NÃO PASSA de fase!
-  const isWin = score >= floor.targetScore; 
-  const starsEarned = calculateStars(floor.type, score, floor.targetScore);
-  const isFirstClear = !floor.completed && isWin;
-
-  await prisma.towerFloor.update({
-    where: { id: floorId },
-    data: {
-      attempts: floor.attempts + 1,
-      bestScore: Math.max(floor.bestScore, score),
-      completed: isWin ? true : floor.completed,
-      stars: Math.max(floor.stars, starsEarned)
-    }
-  });
-
-  // Gamificação simplificada
-  let xpGained = isFirstClear ? (floor.isBoss ? 250 : 50 + (starsEarned * 10)) : (isWin ? 5 : 0);
-
-  if (xpGained > 0) {
-    const now = new Date();
-    const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay())); 
-    startOfWeek.setHours(0, 0, 0, 0);
-    await prisma.userXp.upsert({
+export const getUserTower = async (userId) => {
+  try {
+    let towerUser = await prisma.userInfiniteTower.findUnique({
       where: { userId },
-      update: { totalXp: { increment: xpGained }, weeklyXp: { increment: xpGained } },
-      create: { userId, totalXp: xpGained, weeklyXp: xpGained, level: 1, weekStartsAt: startOfWeek }
+      include: {
+        floors: {
+          orderBy: [{ building: 'asc' }, { floorNumber: 'asc' }]
+        }
+      }
     });
-  }
 
-  // Só libera o próximo andar se bater a meta (isWin === true)
-  let unlockedNext = false;
-  if (isFirstClear && floor.floorNumber === floor.tower.highestFloor) {
-    const nextFloorNumber = floor.floorNumber + 1;
-    await prisma.userInfiniteTower.update({
-      where: { id: floor.tower.id }, data: { highestFloor: nextFloorNumber }
-    });
-    await prisma.towerFloor.create({
-      data: { towerId: floor.tower.id, floorNumber: nextFloorNumber, ...generateFloorConfig(nextFloorNumber) }
-    });
-    unlockedNext = true;
-  }
+    if (!towerUser) {
+      towerUser = await prisma.userInfiniteTower.create({
+        data: {
+          userId,
+          currentBuilding: 1,
+          currentFloor: 1,
+          totalXp: 0,
+          floors: {
+            create: [
+              { building: 1, floorNumber: 1, isLocked: false, targetScore: 400 }
+            ]
+          }
+        },
+        include: { floors: true }
+      });
+    }
 
-  return { isWin, score, targetScore: floor.targetScore, stars: starsEarned, xpGained, unlockedNext };
+    return towerUser;
+  } catch (error) {
+    console.error('Erro em getUserTower:', error);
+    throw error;
+  }
+};
+
+export const submitFloorResult = async (userId, floorId, score) => {
+  try {
+    const floor = await prisma.towerFloor.findUnique({ where: { id: floorId } });
+    if (!floor) throw new Error('Andar não encontrado');
+
+    const isWin = score >= floor.targetScore;
+    let xpGained = 0;
+    let stars = 0;
+
+    if (isWin) {
+      if (score >= floor.targetScore * 1.5) stars = 3;
+      else if (score >= floor.targetScore * 1.2) stars = 2;
+      else stars = 1;
+
+      xpGained = Math.round(score * 0.1 * stars);
+
+      await prisma.towerFloor.update({
+        where: { id: floorId },
+        data: {
+          isCompleted: true,
+          highScore: Math.max(score, floor.highScore || 0),
+          stars: Math.max(stars, floor.stars || 0)
+        }
+      });
+
+      // Lógica Infinita: Descobre qual é o próximo andar ou prédio
+      const isLastFloorInBuilding = floor.floorNumber >= 5; // Mantemos 5 andares por prédio, mas as questões crescem
+      let nextBuilding = floor.building;
+      let nextFloorNum = floor.floorNumber + 1;
+
+      if (isLastFloorInBuilding) {
+        nextBuilding = floor.building + 1;
+        nextFloorNum = 1;
+      }
+
+      // Verifica se o próximo andar já existe, se não, cria
+      const nextFloorExists = await prisma.towerFloor.findFirst({
+        where: { towerUserId: floor.towerUserId, building: nextBuilding, floorNumber: nextFloorNum }
+      });
+
+      if (!nextFloorExists) {
+          // Calcula a dificuldade adaptativa do novo prédio baseado na escala lendária
+          const newTargetScore = calculateTargetScoreForBuilding(nextBuilding);
+          
+          await prisma.towerFloor.create({
+            data: {
+              towerUserId: floor.towerUserId,
+              building: nextBuilding,
+              floorNumber: nextFloorNum,
+              isLocked: false,
+              targetScore: newTargetScore
+            }
+          });
+
+          // Atualiza o progresso do usuário para refletir a nova conquista
+          await prisma.userInfiniteTower.update({
+             where: { id: floor.towerUserId },
+             data: { 
+                 currentBuilding: nextBuilding, 
+                 currentFloor: nextFloorNum,
+                 totalXp: { increment: xpGained }
+             }
+          });
+      }
+
+      // 🔥 CORREÇÃO DE XP: Envia o XP conquistado na Batalha para a conta principal do aluno
+      if (xpGained > 0) {
+          await prisma.user.update({
+              where: { id: userId },
+              data: { xp: { increment: xpGained } }
+          });
+      }
+    }
+
+    return {
+      isWin,
+      score,
+      targetScore: floor.targetScore,
+      stars,
+      xpGained,
+      nextUnlocked: isWin
+    };
+  } catch (error) {
+    console.error('Erro em submitFloorResult:', error);
+    throw error;
+  }
+};
+
+// Nova rota utilitária: Retorna metadados arquiteturais sobre os 100 prédios
+export const getTowerMetadata = async () => {
+    const buildings = [];
+    for(let i = 1; i <= 100; i++) {
+        const district = getDistrictForBuilding(i);
+        buildings.push({
+            id: i,
+            questionsCount: calculateQuestionsForBuilding(i),
+            districtName: district.name,
+            theme: district.theme
+        });
+    }
+    return { districts: DISTRICTS, totalBuildings: 100, buildingsMap: buildings };
 }
 
-// NOVO: Busca o Top 3 daquele Prédio específico
-export async function getTop3ForBuilding(floorNumber) {
-  const topFloors = await prisma.towerFloor.findMany({
-    where: { floorNumber: parseInt(floorNumber), completed: true },
-    orderBy: { bestScore: 'desc' },
-    take: 3,
-    include: { tower: { include: { user: { select: { name: true, xp: true } } } } }
-  });
+// --- FUNÇÃO RECUPERADA: RANKING TOP 3 DO CHEFÃO DO PRÉDIO ---
+export const getTop3ForBuilding = async (floorNumber) => {
+    try {
+        // Encontra os 3 maiores scores na tabela TowerFloor para o andar/prédio específico
+        const topFloors = await prisma.towerFloor.findMany({
+            where: {
+                floorNumber: parseInt(floorNumber),
+                isCompleted: true
+            },
+            orderBy: {
+                highScore: 'desc'
+            },
+            take: 3,
+            include: {
+                tower: {
+                    include: {
+                        user: {
+                            select: { name: true }
+                        }
+                    }
+                }
+            }
+        });
 
-  return topFloors.map((f, i) => ({
-    position: i + 1,
-    name: f.tower.user.name || 'Herói Anônimo',
-    score: f.bestScore
-  }));
-}
+        // Mapeia os resultados para o formato que o frontend espera no Modal
+        return topFloors.map((f, index) => ({
+            position: index + 1,
+            name: f.tower.user.name || "Jogador Anônimo",
+            score: f.highScore
+        }));
+
+    } catch (error) {
+        console.error('Erro em getTop3ForBuilding:', error);
+        return [];
+    }
+};

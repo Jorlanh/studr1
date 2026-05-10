@@ -33,5 +33,8 @@
     "@vitest/coverage-v8": "^4.1.4",
     "supertest": "^7.2.2",
     "vitest": "^4.1.4"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
   }
 }

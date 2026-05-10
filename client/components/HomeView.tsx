@@ -108,7 +108,7 @@ export default function HomeView() {
 
   const { startSimulado, loading: mockLoading } = useMock();
 
-  const { navigate } = useNavigation();
+  const { navigate, view } = useNavigation(); // INCREMENTO: Puxando o estado do view para renderizar a torre
   const { openPricing, setChatOpen } = useUI();
 
   const isPremium = user?.isPremium;
@@ -130,6 +130,19 @@ export default function HomeView() {
       lastMockDate.getMonth() === now.getMonth() &&
       lastMockDate.getFullYear() === now.getFullYear()
     );
+  };
+
+  // INCREMENTO: Função que repassa a quantidade de questões do Prédio para o MockContext
+  const handleTowerBattleStart = (floor: any) => {
+    sessionStorage.setItem('studr_exam_mode', 'TOWER');
+    sessionStorage.setItem('studr_current_tower_floor', JSON.stringify(floor));
+
+    if (floor.type === 'ESSAY') {
+      navigate(AppView.ESSAY);
+    } else {
+      const qCount = floor.questionsCount || 5;
+      startSimulado('AREA', floor.area || AreaOfKnowledge.MIXED, { towerQuestionsCount: qCount });
+    }
   };
 
   return (
