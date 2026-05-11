@@ -13,10 +13,9 @@ const DISTRICTS = [
 ];
 
 // --- MOTOR DE CÁLCULO DE QUESTÕES POR PRÉDIO ---
-// Implementa exatamente a escala solicitada: do Prédio 1 (5q) até Prédio 90+ (120q)
 function calculateQuestionsForBuilding(buildingNum) {
     if (buildingNum < 2) return 5;
-    if (buildingNum < 3) return 6;
+    if (buildingNum < 3) return 6; // Prédio 2: 6 questões
     if (buildingNum < 4) return 7;
     if (buildingNum < 5) return 8;
     if (buildingNum < 10) return 9;
@@ -33,19 +32,25 @@ function calculateQuestionsForBuilding(buildingNum) {
     if (buildingNum < 80) return 75;
     if (buildingNum < 90) return 90;
     if (buildingNum < 100) return 120;
-    return 180; // Prédio 100 = Simulado ENEM Completo
+    return 180;
 }
 
-// --- MOTOR DE CÁLCULO DE DIFICULDADE (TRI ALVO) ---
+// --- MOTOR DE PONTUAÇÃO (PROPORCIONAL AOS ACERTOS) ---
+function calculateScoreFromHits(hits, buildingNum) {
+    const totalQuestions = calculateQuestionsForBuilding(buildingNum);
+    if (totalQuestions <= 0) return 0;
+    // Transforma acertos em nota de 0 a 1000
+    return Math.round((hits / totalQuestions) * 1000);
+}
+
+// --- MOTOR DE DIFICULDADE (TRI ALVO) ---
 function calculateTargetScoreForBuilding(buildingNum) {
-    // Começa em ~400 e termina em ~950 (Elite lendária)
     const baseScore = 400;
     const maxScore = 950;
     const increment = (maxScore - baseScore) / 100;
     return Math.floor(baseScore + (buildingNum * increment));
 }
 
-// Função para identificar o distrito de um prédio
 function getDistrictForBuilding(buildingNum) {
     return DISTRICTS.find(d => buildingNum >= d.startBldg && buildingNum <= d.endBldg) || DISTRICTS[0];
 }
@@ -77,7 +82,6 @@ export const getUserTower = async (userId) => {
         include: { floors: true }
       });
     }
-
     return towerUser;
   } catch (error) {
     console.error('Erro em getUserTower:', error);
@@ -85,72 +89,92 @@ export const getUserTower = async (userId) => {
   }
 };
 
-export const submitFloorResult = async (userId, floorId, score) => {
+export const submitFloorResult = async (userId, floorId, hits) => {
   try {
-    const floor = await prisma.towerFloor.findUnique({ where: { id: floorId } });
+    // 1. Obter dados do andar e da torre do utilizador
+    const floor = await prisma.towerFloor.findUnique({ 
+        where: { id: floorId },
+        include: { tower: true }
+    });
     if (!floor) throw new Error('Andar não encontrado');
 
-    const isWin = score >= floor.targetScore;
+    const towerUser = floor.tower;
+    const buildingNum = floor.building;
+
+    // 2. Calcular nota baseada nos acertos (hits vem do frontend)
+    const currentScore = calculateScoreFromHits(hits, buildingNum);
+    const isWin = currentScore >= floor.targetScore;
+    
     let xpGained = 0;
     let stars = 0;
 
     if (isWin) {
-      if (score >= floor.targetScore * 1.5) stars = 3;
-      else if (score >= floor.targetScore * 1.2) stars = 2;
+      // Cálculo de estrelas (proporcional à performance)
+      if (currentScore >= 900) stars = 3;
+      else if (currentScore >= 700) stars = 2;
       else stars = 1;
 
-      xpGained = Math.round(score * 0.1 * stars);
+      xpGained = Math.round(currentScore * 0.1 * stars);
 
+      // Atualizar status do andar
       await prisma.towerFloor.update({
         where: { id: floorId },
         data: {
           isCompleted: true,
-          highScore: Math.max(score, floor.highScore || 0),
+          highScore: Math.max(currentScore, floor.highScore || 0),
           stars: Math.max(stars, floor.stars || 0)
         }
       });
 
-      // Lógica Infinita: Descobre qual é o próximo andar ou prédio
-      const isLastFloorInBuilding = floor.floorNumber >= 5; // Mantemos 5 andares por prédio, mas as questões crescem
-      let nextBuilding = floor.building;
+      // Lógica de Progressão: 5 andares por prédio
+      const isLastFloorInBuilding = floor.floorNumber >= 5;
+      let nextBuilding = buildingNum;
       let nextFloorNum = floor.floorNumber + 1;
 
       if (isLastFloorInBuilding) {
-        nextBuilding = floor.building + 1;
+        nextBuilding = buildingNum + 1;
         nextFloorNum = 1;
       }
 
-      // Verifica se o próximo andar já existe, se não, cria
+      // 3. Garantir criação do próximo andar se não existir
       const nextFloorExists = await prisma.towerFloor.findFirst({
-        where: { towerUserId: floor.towerUserId, building: nextBuilding, floorNumber: nextFloorNum }
+        where: { towerUserId: towerUser.id, building: nextBuilding, floorNumber: nextFloorNum }
       });
 
       if (!nextFloorExists) {
-          // Calcula a dificuldade adaptativa do novo prédio baseado na escala lendária
-          const newTargetScore = calculateTargetScoreForBuilding(nextBuilding);
-          
           await prisma.towerFloor.create({
             data: {
-              towerUserId: floor.towerUserId,
+              towerUserId: towerUser.id,
               building: nextBuilding,
               floorNumber: nextFloorNum,
               isLocked: false,
-              targetScore: newTargetScore
+              targetScore: calculateTargetScoreForBuilding(nextBuilding)
             }
           });
+      }
 
-          // Atualiza o progresso do usuário para refletir a nova conquista
+      // 4. RESOLUÇÃO DO TRAVAMENTO: Cálculo de valor absoluto de progresso
+      const userCurrentAbsProgress = (towerUser.currentBuilding * 100) + towerUser.currentFloor;
+      const nextAbsProgress = (nextBuilding * 100) + nextFloorNum;
+
+      if (nextAbsProgress > userCurrentAbsProgress) {
           await prisma.userInfiniteTower.update({
-             where: { id: floor.towerUserId },
+             where: { id: towerUser.id },
              data: { 
                  currentBuilding: nextBuilding, 
                  currentFloor: nextFloorNum,
                  totalXp: { increment: xpGained }
              }
           });
+      } else {
+          // Apenas incrementa XP se estiver a repetir o andar
+          await prisma.userInfiniteTower.update({
+             where: { id: towerUser.id },
+             data: { totalXp: { increment: xpGained } }
+          });
       }
 
-      // 🔥 CORREÇÃO DE XP: Envia o XP conquistado na Batalha para a conta principal do aluno
+      // Sincronizar XP com a conta principal
       if (xpGained > 0) {
           await prisma.user.update({
               where: { id: userId },
@@ -161,7 +185,7 @@ export const submitFloorResult = async (userId, floorId, score) => {
 
     return {
       isWin,
-      score,
+      score: currentScore,
       targetScore: floor.targetScore,
       stars,
       xpGained,
@@ -173,7 +197,6 @@ export const submitFloorResult = async (userId, floorId, score) => {
   }
 };
 
-// Nova rota utilitária: Retorna metadados arquiteturais sobre os 100 prédios
 export const getTowerMetadata = async () => {
     const buildings = [];
     for(let i = 1; i <= 100; i++) {
@@ -186,39 +209,29 @@ export const getTowerMetadata = async () => {
         });
     }
     return { districts: DISTRICTS, totalBuildings: 100, buildingsMap: buildings };
-}
+};
 
-// --- FUNÇÃO RECUPERADA: RANKING TOP 3 DO CHEFÃO DO PRÉDIO ---
 export const getTop3ForBuilding = async (floorNumber) => {
     try {
-        // Encontra os 3 maiores scores na tabela TowerFloor para o andar/prédio específico
         const topFloors = await prisma.towerFloor.findMany({
             where: {
                 floorNumber: parseInt(floorNumber),
                 isCompleted: true
             },
-            orderBy: {
-                highScore: 'desc'
-            },
+            orderBy: { highScore: 'desc' },
             take: 3,
             include: {
                 tower: {
-                    include: {
-                        user: {
-                            select: { name: true }
-                        }
-                    }
+                    include: { user: { select: { name: true } } }
                 }
             }
         });
 
-        // Mapeia os resultados para o formato que o frontend espera no Modal
         return topFloors.map((f, index) => ({
             position: index + 1,
-            name: f.tower.user.name || "Jogador Anônimo",
+            name: f.tower.user.name || "Jogador Anónimo",
             score: f.highScore
         }));
-
     } catch (error) {
         console.error('Erro em getTop3ForBuilding:', error);
         return [];

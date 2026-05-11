@@ -338,7 +338,16 @@ export default function HomeView() {
             </div>
           </div>
 
-          <Badge color="blue">ENEM</Badge>
+          <div className="flex flex-col items-end gap-2">
+            <Badge color="blue">ENEM</Badge>
+            {/* BOTÃO DE HISTÓRICO ADICIONADO AQUI */}
+            <button 
+              onClick={() => navigate(AppView.EXAM_HISTORY)}
+              className="text-[10px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-600 transition-colors"
+            >
+              📜 Ver Histórico
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-5">
@@ -369,26 +378,37 @@ export default function HomeView() {
           ))}
         </div>
 
-        <Button
-          onClick={() => startSimulado('FULL')}
-          disabled={
-            mockLoading ||
-            (isMockOnly && hasTakenMockThisMonth())
-          }
-          className="
-          w-full
-          h-14
-          rounded-2xl
-          font-black
-          bg-gradient-to-r
-          from-blue-600
-          to-indigo-500
-        "
-        >
-          {mockLoading
-            ? 'Calibrando IA...'
-            : '🏆 Iniciar Simulado'}
-        </Button>
+        <div className="flex flex-col md:flex-row gap-3">
+          <Button
+            onClick={() => startSimulado('FULL')}
+            disabled={
+              mockLoading ||
+              (isMockOnly && hasTakenMockThisMonth())
+            }
+            className="
+            flex-1
+            h-14
+            rounded-2xl
+            font-black
+            bg-gradient-to-r
+            from-blue-600
+            to-indigo-500
+          "
+          >
+            {mockLoading
+              ? 'Calibrando IA...'
+              : '🏆 Iniciar Simulado Completo'}
+          </Button>
+          
+          {/* OPÇÃO ALTERNATIVA: Botão de histórico ao lado do principal em telas maiores */}
+          <Button
+            variant="outline"
+            onClick={() => navigate(AppView.EXAM_HISTORY)}
+            className="h-14 px-6 rounded-2xl border-2 font-bold md:w-auto w-full"
+          >
+            Análises Anteriores
+          </Button>
+        </div>
       </BentoCard>
 
       {/* ========================================= */}

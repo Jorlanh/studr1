@@ -1,25 +1,28 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Button, LoadingSpinner, Badge } from './UIComponents';
-import { Sword, Lock, Star } from 'lucide-react';
-import { getTowerQuestionCount } from './QuizScreen'; // Usado para exibição visual
+import { Sword, Lock, Star, Target, TrendingUp, RotateCcw } from 'lucide-react';
+import { getTowerQuestionCount } from './QuizScreen'; 
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 interface TowerViewProps { onBack: () => void; onBattleStart: (floor: any) => void; }
 
+// PALETA DE CORES CYBER-INDUSTRIAL
 const DISTRICTS = [
-    { name: "Distrito Inicial", end: 9, color: "text-emerald-500", bg: "bg-emerald-500/10", border: "border-emerald-500/30" },
-    { name: "Cidade Base", end: 24, color: "text-blue-500", bg: "bg-blue-500/10", border: "border-blue-500/30" },
-    { name: "Zona Intermediária", end: 44, color: "text-indigo-500", bg: "bg-indigo-500/10", border: "border-indigo-500/30" },
-    { name: "Cidade Elite", end: 69, color: "text-purple-500", bg: "bg-purple-500/10", border: "border-purple-500/30" },
-    { name: "Complexo Nacional", end: 89, color: "text-slate-200", bg: "bg-slate-800", border: "border-slate-600" },
-    { name: "Torre Suprema", end: 99, color: "text-yellow-400", bg: "bg-black", border: "border-yellow-500/30" },
-    { name: "Torre dos 1000 Pontos", end: 100, color: "text-red-500", bg: "bg-red-900", border: "border-red-500/50" }
+    { name: "Distrito Inicial", end: 9, color: "text-cyan-400", bg: "bg-cyan-500/5", border: "border-cyan-500/20", glow: "shadow-[0_0_20px_rgba(34,211,238,0.1)]" },
+    { name: "Cidade Base", end: 24, color: "text-blue-400", bg: "bg-blue-500/5", border: "border-blue-500/20", glow: "shadow-[0_0_20px_rgba(59,130,246,0.1)]" },
+    { name: "Zona Intermediária", end: 44, color: "text-purple-400", bg: "bg-purple-500/5", border: "border-purple-500/20", glow: "shadow-[0_0_20px_rgba(168,85,247,0.1)]" },
+    { name: "Cidade Elite", end: 69, color: "text-fuchsia-400", bg: "bg-fuchsia-500/5", border: "border-fuchsia-500/20", glow: "shadow-[0_0_20px_rgba(232,121,249,0.1)]" },
+    { name: "Complexo Nacional", end: 89, color: "text-slate-200", bg: "bg-slate-900/50", border: "border-slate-700", glow: "" },
+    { name: "Torre Suprema", end: 99, color: "text-yellow-400", bg: "bg-black/80", border: "border-yellow-500/30", glow: "shadow-[0_0_30px_rgba(234,179,8,0.1)]" },
+    { name: "Torre dos 1000 Pontos", end: 100, color: "text-red-500", bg: "bg-gradient-to-b from-red-950/20 to-black", border: "border-red-500/40", glow: "shadow-[0_0_40px_rgba(239,68,68,0.2)]" }
 ];
 
-function getDistrict(bNum: number) { return DISTRICTS.find(dist => bNum <= dist.end) || DISTRICTS[0]; }
+// 🚨 CORREÇÃO DO ERRO TYPESCRIPT: FUNÇÃO ADICIONADA
+function getDistrict(bNum: number) { 
+    return DISTRICTS.find(dist => bNum <= dist.end) || DISTRICTS[0]; 
+}
 
-// Cálculo universal para renderizar a Meta de Acerto baseada no prédio
 function calculateTargetScoreForBuilding(buildingNum: number) {
     const baseScore = 400;
     const maxScore = 950;
@@ -34,7 +37,6 @@ export default function TowerView({ onBack, onBattleStart }: TowerViewProps) {
     const currentBuildingRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        // Limpa resíduos de batalhas antigas ao montar
         sessionStorage.removeItem('studr_exam_mode');
         sessionStorage.removeItem('studr_current_tower_floor');
         
@@ -42,16 +44,12 @@ export default function TowerView({ onBack, onBattleStart }: TowerViewProps) {
             try {
                 const res = await fetch(`${API_URL}/api/tower/state`, { 
                     headers: { 'Authorization': `Bearer ${localStorage.getItem('studr_token')}` },
-                    cache: 'no-store' // 🚨 EVITA CACHE DO NAVEGADOR
+                    cache: 'no-store'
                 });
                 if(!res.ok) throw new Error("Erro na API da Torre");
                 const data = await res.json();
                 setTower(data);
-            } catch (err) { 
-                console.error(err); 
-            } finally { 
-                setLoading(false); 
-            }
+            } catch (err) { console.error(err); } finally { setLoading(false); }
         };
         fetchTower();
     }, []);
@@ -59,7 +57,7 @@ export default function TowerView({ onBack, onBattleStart }: TowerViewProps) {
     useEffect(() => {
         if (!loading && tower) {
             window.scrollTo(0, 0);
-            const timer = setTimeout(() => { currentBuildingRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 1000);
+            const timer = setTimeout(() => { currentBuildingRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 800);
             return () => clearTimeout(timer);
         }
     }, [loading, tower]);
@@ -72,132 +70,159 @@ export default function TowerView({ onBack, onBattleStart }: TowerViewProps) {
 
     if (loading) return <div className="flex justify-center items-center h-[60vh]"><LoadingSpinner size="md" /></div>;
 
-    // A fonte da verdade sobre onde o jogador está vem exclusivamente destas duas variáveis
     const highestBuilding = tower?.currentBuilding || 1;
     const currentFloorNum = tower?.currentFloor || 1;
     const dbFloors = tower?.floors || [];
-    
-    // Gera todos os prédios de 100 até 1 (renderiza de cima para baixo)
     const ALL_BUILDINGS = Array.from({ length: 100 }, (_, i) => 100 - i);
 
     return (
-        <div className="max-w-4xl mx-auto p-4 animate-fade-in relative pb-32 min-h-screen bg-slate-50 dark:bg-slate-950">
-            {/* HUD TOPO */}
-            <div className="flex justify-between items-center mb-12 sticky top-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md z-50 p-4 rounded-b-3xl shadow-sm border-b border-slate-200 dark:border-slate-800">
-                <Button variant="outline" onClick={onBack} className="rounded-xl border-2">← Sair</Button>
+        <div className="max-w-5xl mx-auto p-4 animate-fade-in pb-32 min-h-screen dark:bg-slate-950 selection:bg-cyan-500/30">
+            {/* STICKY HEADER - APPLE/GLASS STYLE */}
+            <div className="flex justify-between items-center mb-16 sticky top-4 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl z-50 p-5 rounded-3xl shadow-2xl border border-white/20 dark:border-slate-800/50">
+                <Button variant="outline" onClick={onBack} className="rounded-2xl border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">← Sair</Button>
                 <div className="text-center">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Mundo Atual</span>
-                    <h1 className="text-xl font-black text-slate-800 dark:text-white uppercase">Prédio {highestBuilding}</h1>
+                    <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em] block mb-1">Localização</span>
+                    <h1 className="text-2xl font-black text-slate-800 dark:text-white tracking-tighter">PRÉDIO {highestBuilding}</h1>
                 </div>
-                <div className="flex flex-col items-end">
-                    <div className="flex items-center gap-1 bg-yellow-400/10 px-3 py-1 rounded-full border border-yellow-400/20">
-                        <Star size={14} className="fill-yellow-400 text-yellow-400" />
-                        <span className="text-xs font-black text-yellow-600">Torre</span>
-                    </div>
+                <div className="flex items-center gap-3 bg-slate-100 dark:bg-slate-800/50 px-4 py-2 rounded-2xl border border-slate-200 dark:border-slate-700">
+                    <Star size={16} className="text-yellow-400 fill-yellow-400" />
+                    <span className="text-sm font-black text-slate-700 dark:text-slate-200">Jornada TRI</span>
                 </div>
             </div>
 
-            {/* MAPA DOS PRÉDIOS */}
-            <div className="flex flex-col gap-8 relative pb-20">
-                <div className="absolute w-2 h-[98%] bg-slate-200 dark:bg-slate-800 left-16 md:left-[140px] top-10 z-0 rounded-full"></div>
+            <div className="flex flex-col gap-12 relative">
+                {/* LINHA DE PROGRESSÃO CENTRAL */}
+                <div className="absolute w-1 h-[98%] bg-gradient-to-b from-transparent via-slate-200 dark:via-slate-800 to-transparent left-12 md:left-[180px] top-10 z-0"></div>
 
                 {ALL_BUILDINGS.map((bId) => {
                     const isBuildingUnlocked = bId <= highestBuilding;
                     const isBuildingCurrent = bId === highestBuilding;
-                    
                     const district = getDistrict(bId);
                     const qCount = getTowerQuestionCount(bId);
                     const isLastOfDistrict = DISTRICTS.some(d => d.end === bId);
-                    const averageTargetScore = calculateTargetScoreForBuilding(bId);
+                    const targetScore = calculateTargetScoreForBuilding(bId);
+
+                    const buildingFloors = dbFloors.filter((f: any) => f.building === bId);
+                    const completedInBldg = buildingFloors.filter((f: any) => f.isCompleted);
+                    const avgScore = completedInBldg.length > 0 
+                        ? Math.round(completedInBldg.reduce((acc: number, f: any) => acc + (f.highScore || 0), 0) / completedInBldg.length)
+                        : null;
 
                     return (
                         <React.Fragment key={bId}>
-                            {/* CAIXA DE DISTRITO */}
                             {isLastOfDistrict && bId !== 100 && (
-                                <div className={`w-full py-6 my-6 text-center rounded-3xl border-2 ${district.bg} ${district.border} opacity-90 backdrop-blur-sm z-10`}>
-                                    <h2 className={`text-2xl md:text-4xl font-black uppercase tracking-widest ${district.color}`}>{district.name}</h2>
-                                    <p className="text-slate-500 font-bold uppercase text-[10px] md:text-xs mt-1">Nível de Pressão Escalando</p>
+                                <div className={`w-full py-8 my-4 text-center rounded-[2.5rem] border ${district.bg} ${district.border} ${district.glow} z-10 transition-all`}>
+                                    <h2 className={`text-3xl md:text-5xl font-black uppercase tracking-tighter ${district.color}`}>{district.name}</h2>
+                                    <Badge color="blue" className="mt-3 opacity-60 uppercase text-[10px] tracking-widest">Setor Desbloqueado</Badge>
                                 </div>
                             )}
-                            
-                            {/* CHEFÃO FINAL 100 */}
+
                             {bId === 100 && (
-                                <div className="w-full py-12 mb-10 text-center rounded-3xl bg-gradient-to-r from-red-600 to-amber-900 border-4 border-yellow-500 shadow-[0_0_50px_rgba(239,68,68,0.5)] z-10">
+                                <div className="w-full py-12 mb-10 text-center rounded-3xl bg-gradient-to-b from-red-950/20 to-black border-4 border-yellow-500 shadow-[0_0_50px_rgba(239,68,68,0.5)] z-10">
                                     <h2 className="text-4xl md:text-6xl font-black uppercase tracking-tighter text-white drop-shadow-lg">Torre dos 1000 Pontos</h2>
                                     <p className="text-yellow-200 font-black uppercase tracking-widest mt-2 text-sm">O Julgamento Final - Simulado ENEM Completo</p>
                                 </div>
                             )}
 
-                            {/* LINHA DO PRÉDIO */}
-                            <div ref={isBuildingCurrent ? currentBuildingRef : null} className={`relative flex flex-col md:flex-row items-start md:items-center gap-6 ${!isBuildingUnlocked ? 'opacity-40 grayscale' : 'z-20'}`}>
+                            <div ref={isBuildingCurrent ? currentBuildingRef : null} 
+                                 className={`relative flex flex-col md:flex-row items-start md:items-stretch gap-8 ${!isBuildingUnlocked ? 'opacity-30 grayscale scale-95 pointer-events-none' : 'z-20'}`}>
                                 
-                                {/* CAIXA DE INFORMAÇÃO DO PRÉDIO ESQUERDA */}
-                                <div className={`w-32 flex-shrink-0 flex flex-col items-center justify-center ${isBuildingCurrent ? 'scale-110 transform transition-all drop-shadow-2xl' : ''}`}>
-                                    <div className={`w-24 h-24 md:w-32 md:h-32 rounded-3xl flex flex-col items-center justify-center border-4 shadow-xl ${isBuildingUnlocked ? 'bg-gradient-to-br from-slate-800 to-slate-900 border-indigo-400' : 'bg-slate-200 dark:bg-slate-800 border-slate-300 dark:border-slate-700 shadow-none'}`}>
-                                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Prédio</span>
-                                        <span className={`text-4xl md:text-5xl font-black ${isBuildingUnlocked ? 'text-white' : 'text-slate-400'}`}>{bId}</span>
+                                {/* CARD DO PRÉDIO - ESTILO APPLE/INDUSTRIAL */}
+                                <div className={`w-40 md:w-48 flex-shrink-0 flex flex-col p-6 rounded-[2rem] border-2 transition-all duration-500
+                                    ${isBuildingCurrent ? 'bg-slate-900 border-cyan-500 shadow-[0_0_30px_rgba(6,182,212,0.2)]' : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800'}`}>
+                                    
+                                    <div className="flex flex-col items-center text-center mb-6">
+                                        <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Building</span>
+                                        <span className={`text-5xl font-black ${isBuildingCurrent ? 'text-white' : 'text-slate-400 dark:text-slate-600'}`}>{bId}</span>
                                     </div>
-                                    <div className="mt-3 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-1 rounded-xl shadow-sm">
-                                        <span className="text-[10px] font-black uppercase text-indigo-500 block">{qCount} Questões</span>
-                                    </div>
-                                    {isBuildingUnlocked && (
-                                        <div className="mt-2 bg-indigo-500/10 border border-indigo-500/20 px-3 py-1 rounded-xl text-center">
-                                            <span className="text-[9px] font-black uppercase text-indigo-400 block tracking-wider">Meta TRI</span>
-                                            <span className="text-xs font-black text-indigo-500">{averageTargetScore}</span>
+
+                                    <div className="space-y-3">
+                                        <div className="flex flex-col gap-1 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700">
+                                            <div className="flex items-center gap-1.5 opacity-80">
+                                                <Target size={10} className="text-cyan-500" />
+                                                <span className="text-[8px] font-black uppercase tracking-tighter text-slate-500">Meta TRI</span>
+                                            </div>
+                                            <span className="text-sm font-black text-slate-700 dark:text-slate-200">{targetScore}</span>
                                         </div>
-                                    )}
+
+                                        {avgScore !== null && (
+                                            <div className={`flex flex-col gap-1 p-3 rounded-2xl border transition-colors
+                                                ${avgScore >= targetScore ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-amber-500/10 border-amber-500/20'}`}>
+                                                <div className="flex items-center gap-1.5 opacity-90">
+                                                    <TrendingUp size={10} className={avgScore >= targetScore ? 'text-emerald-500' : 'text-amber-500'} />
+                                                    <span className={`text-[8px] font-black uppercase tracking-tighter ${avgScore >= targetScore ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>Sua Média</span>
+                                                </div>
+                                                <span className={`text-sm font-black ${avgScore >= targetScore ? 'text-emerald-500' : 'text-amber-500'}`}>{avgScore}</span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                                        <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider">{qCount} Questões</span>
+                                        <div className={`w-2 h-2 rounded-full ${isBuildingCurrent ? 'bg-cyan-500 animate-pulse' : 'bg-slate-200 dark:bg-slate-700'}`}></div>
+                                    </div>
                                 </div>
 
-                                {/* ANDARES DO PRÉDIO DIREITA */}
-                                <div className="flex-1 flex flex-wrap gap-4 items-center ml-16 md:ml-0">
+                                {/* LISTA DE ANDARES COM OPÇÃO DE REPLAY */}
+                                <div className="flex-1 flex flex-wrap content-center gap-6 ml-16 md:ml-0 pt-4 md:pt-0">
                                     {Array.from({ length: 5 }).map((_, i) => {
-                                        const floorNum = i + 1;
+                                        const fNum = i + 1;
+                                        const dbF = dbFloors.find((f: any) => f.building === bId && f.floorNumber === fNum);
                                         
-                                        // Busca o andar real na base de dados para ver as estrelas
-                                        const dbFloor = dbFloors.find((f: any) => f.building === bId && f.floorNumber === floorNum);
-                                        
-                                        // 🚨 LÓGICA DE PROGRESSÃO BLINDADA 🚨
-                                        // Um nó está completo se o prédio for menor que o atual, OU se for o prédio atual E o andar for menor que o atual
-                                        const isNodeCompleted = bId < highestBuilding || (bId === highestBuilding && floorNum < currentFloorNum);
-                                        
-                                        // Um nó é o atual se for o prédio exato E o andar exato
-                                        const isNodeCurrent = bId === highestBuilding && floorNum === currentFloorNum;
-                                        
-                                        // Todos os outros estão trancados
-                                        const isNodeLocked = !isNodeCompleted && !isNodeCurrent;
+                                        const isDone = dbF?.isCompleted || (bId < highestBuilding || (bId === highestBuilding && fNum < currentFloorNum));
+                                        const isActive = bId === highestBuilding && fNum === currentFloorNum;
+                                        const isLocked = !isDone && !isActive;
 
-                                        // Mock object a ser enviado para a batalha
-                                        const floorPayload = dbFloor || {
-                                            id: `mock-${bId}-${floorNum}`,
+                                        const floorPayload = dbF || {
+                                            id: `mock-${bId}-${fNum}`,
                                             building: bId,
-                                            floorNumber: floorNum,
-                                            targetScore: averageTargetScore,
-                                            isBoss: floorNum === 5,
+                                            floorNumber: fNum,
+                                            targetScore: targetScore,
+                                            isBoss: fNum === 5,
                                             area: 'Todas as Áreas',
-                                            topic: `Treino Geral do Andar ${floorNum}` // Adicionei isso para a IA não falhar se faltar tópico
+                                            topic: `Treino Geral do Andar ${fNum}`
                                         };
 
                                         return (
-                                            <div key={floorNum} className="flex flex-col items-center">
+                                            <div key={fNum} className="flex flex-col items-center group">
+                                                {/* 🚨 CORREÇÃO: BOTÃO ATIVO PARA REFAZER (isDone || isActive) 🚨 */}
                                                 <button
-                                                    onClick={() => isNodeCurrent && handleBattle(floorPayload)}
-                                                    disabled={!isNodeCurrent || battlingId === floorPayload.id}
-                                                    className={`w-14 h-14 md:w-16 md:h-16 rounded-2xl flex flex-col items-center justify-center font-black transition-all transform mt-4
-                                                        ${isNodeCompleted ? 'bg-emerald-500 text-white border-b-4 border-emerald-700' : 
-                                                        isNodeCurrent ? 'bg-yellow-400 text-yellow-900 border-b-4 border-yellow-600 scale-110 hover:-translate-y-1 animate-pulse shadow-xl shadow-yellow-500/40 cursor-pointer' : 
-                                                        'bg-slate-200 dark:bg-slate-800 text-slate-400 border-b-4 border-slate-300 dark:border-slate-700 cursor-not-allowed'}`}
+                                                    onClick={() => (isActive || isDone) && handleBattle(floorPayload)}
+                                                    disabled={isLocked || battlingId === floorPayload.id}
+                                                    title={isDone ? "Refazer este andar" : ""}
+                                                    className={`w-16 h-16 md:w-20 md:h-20 rounded-3xl flex flex-col items-center justify-center font-black transition-all duration-300 relative
+                                                        ${isDone ? 'bg-white dark:bg-slate-900 border-2 border-emerald-500 text-emerald-500 shadow-[0_10px_20px_rgba(16,185,129,0.1)] hover:border-emerald-400 cursor-pointer hover:-translate-y-1' : 
+                                                          isActive ? 'bg-cyan-500 text-white shadow-[0_15px_30px_rgba(6,182,212,0.3)] scale-110 -translate-y-2 cursor-pointer' : 
+                                                          'bg-slate-100 dark:bg-slate-800/50 text-slate-300 dark:text-slate-700 border-2 border-transparent cursor-not-allowed'}`}
                                                 >
                                                     {battlingId === floorPayload.id ? <LoadingSpinner size="sm" /> : 
-                                                     isNodeLocked ? <Lock size={20} /> : 
-                                                     floorPayload.isBoss ? <Sword size={24} /> : 
-                                                     <span className="text-lg md:text-xl">{floorNum}</span>}
+                                                     isLocked ? <Lock size={18} className="opacity-40" /> : 
+                                                     floorPayload.isBoss ? <Sword size={24} /> : <span className="text-xl">{fNum}</span>}
                                                     
-                                                    {isNodeCompleted && dbFloor?.stars > 0 && (
-                                                        <div className="flex gap-0.5 mt-0.5">
-                                                            {Array(dbFloor.stars).fill(0).map((_, idx) => <span key={idx} className="text-[6px] md:text-[8px]">⭐</span>)}
+                                                    {/* Ícone de Replay invisível até o Hover */}
+                                                    {isDone && !battlingId && (
+                                                        <div className="absolute -top-2 -right-2 bg-emerald-100 dark:bg-emerald-900/50 p-1.5 rounded-full text-emerald-600 dark:text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm">
+                                                            <RotateCcw size={12} strokeWidth={3} />
+                                                        </div>
+                                                    )}
+
+                                                    {isDone && dbF?.stars > 0 && (
+                                                        <div className="absolute -bottom-2.5 flex gap-0.5">
+                                                            {Array(dbF.stars).fill(0).map((_, idx) => (
+                                                                <div key={idx} className="bg-emerald-500 p-0.5 rounded-sm shadow-md">
+                                                                    <Star size={8} className="fill-white text-white" />
+                                                                </div>
+                                                            ))}
                                                         </div>
                                                     )}
                                                 </button>
+                                                
+                                                {/* PONTUAÇÃO DO ANDAR ABAIXO DO BOTÃO */}
+                                                {isDone && dbF?.highScore !== undefined && (
+                                                    <span className="mt-5 text-[10px] font-black text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/80 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700">
+                                                        {dbF.highScore} PTS
+                                                    </span>
+                                                )}
                                             </div>
                                         );
                                     })}
@@ -207,9 +232,11 @@ export default function TowerView({ onBack, onBattleStart }: TowerViewProps) {
                     );
                 })}
 
-                <div className="mt-8 z-20 w-full max-w-[200px] mx-auto h-8 bg-slate-300 dark:bg-slate-800 rounded-t-full shadow-inner border-t-4 border-slate-400"></div>
-                <div className="z-10 bg-slate-800 text-white px-8 py-3 rounded-full font-black tracking-widest text-sm shadow-xl mx-auto border-4 border-slate-600 -translate-y-4">
-                    PONTO DE PARTIDA
+                <div className="mt-20 flex flex-col items-center opacity-50">
+                    <div className="w-1 h-12 bg-gradient-to-b from-slate-200 dark:from-slate-800 to-transparent"></div>
+                    <div className="bg-slate-200 dark:bg-slate-800 px-6 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                        Início da Evolução
+                    </div>
                 </div>
             </div>
         </div>
