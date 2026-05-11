@@ -39,8 +39,10 @@ function calculateQuestionsForBuilding(buildingNum) {
 function calculateScoreFromHits(hits, buildingNum) {
     const totalQuestions = calculateQuestionsForBuilding(buildingNum);
     if (totalQuestions <= 0) return 0;
-    // Transforma acertos em nota de 0 a 1000
-    return Math.round((hits / totalQuestions) * 1000);
+    
+    // Transforma acertos em nota de 0 a 1000 e garante limites de segurança
+    const score = Math.round((hits / totalQuestions) * 1000);
+    return Math.min(Math.max(score, 0), 1000); 
 }
 
 // --- MOTOR DE DIFICULDADE (TRI ALVO) ---

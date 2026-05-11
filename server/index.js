@@ -12,15 +12,14 @@ import * as aiService from './services/aiService.js';
 import { checkAndConsumeQuestion, checkAndConsumeMock } from './services/planService.js';
 import { calculateScore, calculateFinalGrade } from './services/scoringService.js';
 
-// 🛡️ CORREÇÃO AQUI: getTop3ForBuilding adicionado!
-import { getUserTower, submitFloorResult, getTop3ForBuilding } from './services/towerService.js';
+// 🛡️ IMPORTAÇÕES DA TORRE CORRIGIDAS
+import { getUserTower, submitFloorResult, getTop3ForBuilding, getTowerMetadata } from './services/towerService.js';
 
 import { emitEvent, getState as getGamificationState } from './services/gamificationService.js';
 import { getCurrentRanking, rolloverWeek } from './services/rankingService.js';
 import { asaasService } from './services/asaasService.js';
 
 import cron from 'node-cron';
-
 
 dotenv.config();
 
@@ -31,7 +30,6 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const PORT = process.env.PORT || 4000;
 const JWT_SECRET = process.env.JWT_SECRET || 'studr_secret_key';
 
-// const MAX_DEVICES = 3;           // max authorized devices per user in 30 days (REMOVED)
 const ABUSE_THRESHOLD = 5;       // max new fingerprints in 7 days before account block
 const CODE_EXPIRY_MINUTES = 10;  // device auth code expiry
 
@@ -94,11 +92,8 @@ const authenticateToken = async (req, res, next) => {
     if (!token) return res.status(401).json({ error: 'Acesso negado.' });
 
     try {
-        // Usa process.env.JWT_SECRET para validar o token
         const payload = jwt.verify(token, process.env.JWT_SECRET);
         
-        // Checamos o banco apenas para ter certeza de que o usuário não foi bloqueado ou excluído.
-        // O sessionToken NÃO é mais verificado, permitindo acessos simultâneos ilimitados.
         const user = await prisma.user.findUnique({
             where: { id: payload.userId },
             select: { id: true, isBlocked: true, role: true }
@@ -114,7 +109,6 @@ const authenticateToken = async (req, res, next) => {
             return res.status(403).json({ error: 'Sua conta está bloqueada por atividade suspeita. Entre em contato com o suporte.' });
         }
 
-        // Passa os dados básicos pro request continuar
         req.user = { userId: user.id, role: user.role };
         next();
 
@@ -136,8 +130,6 @@ const requireAdmin = async (req, res, next) => {
             return res.status(401).json({ error: 'Não autenticado.' });
         }
 
-        // Como o authenticateToken já trouxe a role e barrou bloqueados,
-        // só precisamos checar se a role é admin.
         if (req.user.role !== 'admin') {
             console.warn(`[Admin] Tentativa de acesso admin negada | userId: ${req.user.userId} | path: ${req.path}`);
             return res.status(403).json({ error: 'Acesso restrito ao administrador.' });
@@ -191,7 +183,6 @@ app.post('/api/webhooks/kiwify', async (req, res) => {
         const { token } = req.query;
         const expectedToken = process.env.KIWIFY_TOKEN;
 
-        // Security Validation (Simple token check)
         if (expectedToken && token !== expectedToken) {
             console.error('[Kiwify Webhook] Invalid Token provided in query string');
             return res.status(401).json({ error: 'Unauthorized: Invalid Token' });
@@ -209,12 +200,10 @@ app.post('/api/webhooks/kiwify', async (req, res) => {
         const email = customer.email.toLowerCase();
         const name = customer.full_name || customer.first_name || '';
 
-        // 1. Check if the product exists in our Plan table
         const plan = await prisma.plan.findUnique({
             where: { kiwifyProductId: product_id }
         });
 
-        // Handle Approved Payment
         if (order_status === 'paid') {
             let user = await prisma.user.findUnique({ where: { email } });
             let isNewUser = false;
@@ -235,12 +224,10 @@ app.post('/api/webhooks/kiwify', async (req, res) => {
                 });
             }
 
-            // 2. Determine access details from Plan
-            const isFullAccess = plan ? plan.accessLevel === 'FULL' : true; // Default to FULL if plan not registered yet
+            const isFullAccess = plan ? plan.accessLevel === 'FULL' : true; 
             const subStatus = plan ? plan.accessLevel : 'ACTIVE';
             const cycle = plan ? plan.billingCycle : (body.product_name?.toLowerCase().includes('anual') ? 'YEARLY' : 'MONTHLY');
 
-            // Update User with Plan info
             await prisma.user.update({
                 where: { email },
                 data: {
@@ -249,11 +236,10 @@ app.post('/api/webhooks/kiwify', async (req, res) => {
                     billingCycle: cycle,
                     planId: plan?.id || null,
                     lastPaymentDate: new Date(),
-                    trialEndsAt: new Date() // End trial immediately on purchase
+                    trialEndsAt: new Date()
                 }
             });
 
-            // If it's a new user, send credentials
             if (isNewUser) {
                 const planName = plan ? plan.name : body.product_name || 'Assinatura';
                 await resend.emails.send({
@@ -277,7 +263,6 @@ app.post('/api/webhooks/kiwify', async (req, res) => {
             }
         } 
         
-        // Handle Cancellations / Refunds
         else if (['refunded', 'chargeback', 'canceled'].includes(order_status)) {
             await prisma.user.update({
                 where: { email },
@@ -377,7 +362,6 @@ app.post('/api/auth/verify', async (req, res) => {
             return res.status(400).json({ error: 'Código inválido.' });
         }
 
-        // Generate session token for this first login
         const sessionToken = randomUUID();
 
         await prisma.user.update({
@@ -421,8 +405,6 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(403).json({ error: 'Conta bloqueada por atividade suspeita. Entre em contato com o suporte.' });
         }
 
-        // ── No fingerprint = allow login (e.g. older clients), skip device check ──
-        // ── Test accounts bypass device verification ──
         const TEST_EMAILS = ['trial@studr.com.br', 'premium@studr.com.br', 'simulado@studr.com.br'];
         if (!fingerprint || TEST_EMAILS.includes(user.email)) {
             const sessionToken = randomUUID();
@@ -431,13 +413,11 @@ app.post('/api/auth/login', async (req, res) => {
             return res.json({ token, user: buildUserPayload(user) });
         }
 
-        // ── Check if device already registered ──────────────────────────────────
         const existingDevice = await prisma.userDevice.findUnique({
             where: { userId_fingerprint: { userId: user.id, fingerprint } }
         });
 
         if (existingDevice && existingDevice.isAuthorized) {
-            // Known trusted device: update lastSeen, rotate session token
             const sessionToken = randomUUID();
             await prisma.user.update({ where: { id: user.id }, data: { sessionToken } });
             await prisma.userDevice.update({
@@ -448,30 +428,13 @@ app.post('/api/auth/login', async (req, res) => {
             return res.json({ token, user: buildUserPayload(user) });
         }
 
-        // ── New or unauthorized device ──────────────────────────────────────────
-        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-        /* (Limite de 3 aparelhos removido - mantendo apenas como registro)
-        // Check authorized device count in last 30 days
-        const authorizedCount = await prisma.userDevice.count({
-            where: { userId: user.id, isAuthorized: true, lastSeen: { gte: thirtyDaysAgo } }
-        });
-
-        if (authorizedCount >= MAX_DEVICES) {
-            return res.status(403).json({
-                error: `Limite de ${MAX_DEVICES} aparelhos atingido. Gerencie seus dispositivos ou entre em contato com o suporte.`
-            });
-        }
-        */
-
-        // Check for abuse: number of NEW (distinct) fingerprints in last 7 days
         const newDevicesLastWeek = await prisma.userDevice.count({
             where: { userId: user.id, createdAt: { gte: sevenDaysAgo } }
         });
 
         if (newDevicesLastWeek >= ABUSE_THRESHOLD) {
-            // Block account
             await prisma.user.update({ where: { id: user.id }, data: { isBlocked: true } });
             await resend.emails.send({
                 from: process.env.RESEND_FROM_EMAIL || 'Studr <onboarding@resend.dev>',
@@ -484,7 +447,6 @@ app.post('/api/auth/login', async (req, res) => {
             });
         }
 
-        // Generate 6-digit auth code and save device (unauthorized)
         const authCode = Math.floor(100000 + Math.random() * 900000).toString();
         const authCodeExpiresAt = new Date(Date.now() + CODE_EXPIRY_MINUTES * 60 * 1000);
 
@@ -507,7 +469,6 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
-// ─── New: Verify Device ───────────────────────────────────────────────────────
 app.post('/api/auth/verify-device', async (req, res) => {
     try {
         const { email, code, fingerprint } = req.body;
@@ -525,13 +486,11 @@ app.post('/api/auth/verify-device', async (req, res) => {
             return res.status(400).json({ error: 'Código expirado. Faça login novamente para receber um novo código.' });
         }
 
-        // Authorize device
         await prisma.userDevice.update({
             where: { id: device.id },
             data: { isAuthorized: true, authCode: null, authCodeExpiresAt: null, lastSeen: new Date() }
         });
 
-        // Issue new session token
         const sessionToken = randomUUID();
         await prisma.user.update({ where: { id: user.id }, data: { sessionToken } });
 
@@ -549,7 +508,6 @@ app.post('/api/auth/forgot-password', async (req, res) => {
         const user = await prisma.user.findUnique({ where: { email } });
 
         if (!user) {
-            // Safety: don't reveal if user exists
             return res.json({ message: 'Se este e-mail estiver cadastrado, você receberá um código de recuperação.' });
         }
 
@@ -590,7 +548,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
                 password: hashedPassword,
                 recoveryCode: null,
                 recoveryCodeExpiresAt: null,
-                sessionToken: randomUUID() // force logouts of old sessions
+                sessionToken: randomUUID() 
             }
         });
 
@@ -601,7 +559,6 @@ app.post('/api/auth/reset-password', async (req, res) => {
     }
 });
 
-// ─── Validate Session (restore from localStorage) ────────────────────────────
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
     try {
         const user = await prisma.user.findUnique({ where: { id: req.user.userId } });
@@ -659,7 +616,6 @@ app.put('/api/admin/affiliates/:id/status', authenticateToken, requireAdmin, asy
     }
 });
 
-// Affiliate Products (admin registers once per product type)
 app.get('/api/admin/affiliate-products', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const products = await prisma.affiliateProduct.findMany({ orderBy: { productType: 'asc' } });
@@ -690,7 +646,6 @@ app.put('/api/admin/affiliate-products/:productType', authenticateToken, require
     }
 });
 
-// Approve affiliate: save slug + discounts, send invite email
 app.put('/api/admin/affiliates/:id/approve', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
@@ -707,7 +662,6 @@ app.put('/api/admin/affiliates/:id/approve', authenticateToken, requireAdmin, as
 
         const cleanSlug = slug.toLowerCase().replace(/[^a-z0-9-]/g, '');
 
-        // Fetch affiliate products for invite links
         const products = await prisma.affiliateProduct.findMany();
         if (products.length < 3) {
             return res.status(400).json({ error: 'Cadastre os 3 produtos na aba Produtos antes de aprovar afiliados.' });
@@ -735,7 +689,6 @@ app.put('/api/admin/affiliates/:id/approve', authenticateToken, requireAdmin, as
 
         await prisma.user.update({ where: { id }, data: { affiliateStatus: 'approved' } });
 
-        // Build invite links section for email
         const productMap = Object.fromEntries(products.map(p => [p.productType, p]));
         const monthlyInvite = productMap['monthly']?.kiwifyInviteLink || '';
         const annualInvite = productMap['annual']?.kiwifyInviteLink || '';
@@ -793,7 +746,6 @@ app.get('/api/affiliate/:slug', async (req, res) => {
             return res.status(404).json({ error: 'Afiliado não encontrado.' });
         }
 
-        // Fetch product checkout URLs as base
         const products = await prisma.affiliateProduct.findMany();
         const productMap = Object.fromEntries(products.map(p => [p.productType, p]));
 
@@ -882,10 +834,9 @@ app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) =>
 
 // ─── Plan enforcement endpoints ───────────────────────────────────────────────
 
-// Called by the client before starting a practice session
 app.post('/api/practice/start', authenticateToken, async (req, res) => {
     try {
-        const check = await checkAndConsumeQuestion(req.user.userId, 0); // 0 = check only, no consume yet
+        const check = await checkAndConsumeQuestion(req.user.userId, 0); 
         if (!check.allowed) {
             return res.status(403).json({ error: check.reason, details: check });
         }
@@ -896,7 +847,6 @@ app.post('/api/practice/start', authenticateToken, async (req, res) => {
     }
 });
 
-// Called by the client before starting a simulado — creates Exam record and returns examId
 app.post('/api/mock/start', authenticateToken, async (req, res) => {
     try {
         const check = await checkAndConsumeMock(req.user.userId);
@@ -918,7 +868,6 @@ app.post('/api/mock/start', authenticateToken, async (req, res) => {
     }
 });
 
-// Finalizes a simulado: receives responses, calculates 3PL TRI score, stores in DB
 app.post('/api/exams/:id/finalize', authenticateToken, async (req, res) => {
     try {
         const examId = req.params.id;
@@ -928,24 +877,19 @@ app.post('/api/exams/:id/finalize', authenticateToken, async (req, res) => {
         if (!exam) return res.status(404).json({ error: 'Simulado não encontrado.' });
         if (exam.finalizedAt) return res.status(400).json({ error: 'Simulado já finalizado.' });
 
-        // INCREMENTO: Extraindo também o redacaoScore do corpo da requisição
         const { responses, redacaoScore } = req.body;
         if (!Array.isArray(responses) || responses.length === 0) {
             return res.status(400).json({ error: 'Respostas inválidas.' });
         }
 
-        // INCREMENTO: Usando a nova função calculateFinalGrade que leva a redação em conta
         const { theta, score, band, finalAverage, scoresByArea } = await calculateFinalGrade(responses, redacaoScore || 0);
         const timeSpentSec = Math.round((Date.now() - new Date(exam.createdAt).getTime()) / 1000);
 
-        // Persist finalization data
         await prisma.exam.update({
             where: { id: examId },
-            // INCREMENTO: Salvamos a finalAverage como o "score" final do simulado no banco
             data: { score: finalAverage, theta, band, timeSpentSec, finalizedAt: new Date() },
         });
 
-        // Backfill ExamQuestion answers (upsert in case real-time recording missed any)
         const updateOps = responses
             .filter(r => typeof r.orderIndex === 'number')
             .map(r =>
@@ -960,7 +904,6 @@ app.post('/api/exams/:id/finalize', authenticateToken, async (req, res) => {
             );
         if (updateOps.length > 0) await Promise.all(updateOps);
 
-        // INCREMENTO: Retornamos o finalAverage como score, além das notas divididas por área
         res.json({ score: finalAverage, band, theta, scoresByArea });
     } catch (err) {
         console.error('[finalize] erro:', err);
@@ -968,7 +911,6 @@ app.post('/api/exams/:id/finalize', authenticateToken, async (req, res) => {
     }
 });
 
-// Record a single question answer in real-time (fire-and-forget from client)
 app.put('/api/exams/:examId/questions/:orderIndex/answer', authenticateToken, async (req, res) => {
     try {
         const { examId, orderIndex } = req.params;
@@ -995,7 +937,6 @@ app.put('/api/exams/:examId/questions/:orderIndex/answer', authenticateToken, as
     }
 });
 
-// List finalized exams for the logged-in user (exam history)
 app.get('/api/exams', authenticateToken, async (req, res) => {
     try {
         const exams = await prisma.exam.findMany({
@@ -1014,7 +955,6 @@ app.get('/api/exams', authenticateToken, async (req, res) => {
     }
 });
 
-// Get a single exam with all questions (for review)
 app.get('/api/exams/:id', authenticateToken, async (req, res) => {
     try {
         const exam = await prisma.exam.findFirst({
@@ -1041,13 +981,19 @@ app.get('/api/tower/state', authenticateToken, async (req, res) => {
     }
 });
 
+// 🚨 ROTA DA TORRE CORRIGIDA: AGORA USA 'hits'
 app.post('/api/tower/submit', authenticateToken, async (req, res) => {
     try {
-        const { floorId, score } = req.body;
-        const result = await submitFloorResult(req.user.userId, floorId, score);
-        res.json(result); // Retorna { isWin, stars, xpGained, unlockedNext }
+        const { floorId, hits } = req.body;
+        
+        if (!floorId || typeof hits !== 'number') {
+            return res.status(400).json({ error: 'Dados inválidos. floorId e hits são obrigatórios.' });
+        }
+
+        const result = await submitFloorResult(req.user.userId, floorId, hits);
+        res.json(result); 
     } catch (err) {
-        console.error('[tower/submit] erro:', err);
+        console.error('[tower/submit] erro:', err.message);
         res.status(500).json({ error: 'Erro ao validar andar da torre.' });
     }
 });
@@ -1064,21 +1010,19 @@ app.get('/api/tower/top3/:floorNumber', authenticateToken, async (req, res) => {
 
 // ─── Gamification Routes ──────────────────────────────────────────────────────
 
-// Emit a gamification event (fire-and-forget friendly — always returns 200 on success)
 app.post('/api/gamification/event', authenticateToken, async (req, res) => {
     try {
         const { eventType, payload = {} } = req.body;
         if (!eventType) return res.status(400).json({ error: 'eventType obrigatório.' });
 
         const result = await emitEvent(req.user.userId, eventType, payload);
-        res.json(result); // { xpDelta, totalXp, level, leveledUp, newBadges }
+        res.json(result); 
     } catch (err) {
         console.error('[gamification/event] erro:', err);
         res.status(500).json({ error: 'Erro ao processar evento.' });
     }
 });
 
-// Get full gamification state for the logged-in user
 app.get('/api/gamification/state', authenticateToken, async (req, res) => {
     try {
         const state = await getGamificationState(req.user.userId);
@@ -1103,8 +1047,7 @@ app.get('/api/ranking', authenticateToken, async (req, res) => {
     }
 });
 
-// ─── Cron: virada de semana (segunda-feira 00:05, fuso America/Sao_Paulo) ─────
-
+// ─── Cron ─────
 if (process.env.TEST !== '1') {
     cron.schedule('5 0 * * 1', async () => {
         console.log('[cron] Executando rolloverWeek...');
@@ -1117,9 +1060,6 @@ if (process.env.TEST !== '1') {
     }, { timezone: 'America/Sao_Paulo' });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Map Portuguese difficulty labels to calibration keys
 const DIFFICULTY_KEY = { 'Fácil': 'EASY', 'Média': 'MEDIUM', 'Difícil': 'HARD' };
 
 // AI Routes
@@ -1127,7 +1067,6 @@ app.post('/api/ai/generate-questions', authenticateToken, async (req, res) => {
     try {
         const { area, count, specificTopic, excludeTopics, isReviewErrors, inMock, examId } = req.body;
 
-        // E2E mode: return deterministic stub questions without hitting OpenAI
         if (E2E_MODE) {
             const stub = Array.from({ length: count || 1 }, (_, i) => ({
                 id: `e2e-${area}-${i}`,
@@ -1142,7 +1081,6 @@ app.post('/api/ai/generate-questions', authenticateToken, async (req, res) => {
             return res.json(stub);
         }
 
-        // Server-side plan enforcement (source of truth: DB, not localStorage)
         if (!inMock) {
             const check = await checkAndConsumeQuestion(req.user.userId, count || 1);
             if (!check.allowed) {
@@ -1156,7 +1094,6 @@ app.post('/api/ai/generate-questions', authenticateToken, async (req, res) => {
         const questions = await aiService.generateQuestionBatch(area, count, specificTopic, excludeTopics, isReviewErrors);
         console.log(`[AI] ✓ ${questions.length} questão(ões) gerada(s) em ${Date.now() - start}ms`);
 
-        // Persist questions to ExamQuestion table if exam is being tracked
         if (examId && questions.length > 0) {
             try {
                 const startIndex = await prisma.examQuestion.count({ where: { examId } });
@@ -1171,7 +1108,6 @@ app.post('/api/ai/generate-questions', authenticateToken, async (req, res) => {
                 }));
                 await prisma.examQuestion.createMany({ data: rows });
             } catch (dbErr) {
-                // Non-fatal: log but don't fail the request
                 console.warn('[AI] Falha ao persistir ExamQuestion:', dbErr?.message);
             }
         }
@@ -1262,7 +1198,6 @@ app.post('/api/ai/grade-1000-example', authenticateToken, async (req, res) => {
     }
 });
 
-// Health check — usado pelo CI (wait-on) e smoke tests
 app.get('/api/health', async (_req, res) => {
     try {
         await prisma.$queryRaw`SELECT 1`;

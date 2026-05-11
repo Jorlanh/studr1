@@ -49,7 +49,7 @@ export default function QuizScreen() {
         const floor = JSON.parse(floorStr);
         const level = floor.floorNumber || 1;
         setTowerLevel(level);
-        setTowerTargetCount(getTowerQuestionCount(level));
+        setTowerTargetCount(getTowerQuestionCount(floor.building || 1));
       }
     }
   }, [isMock]);
@@ -76,28 +76,22 @@ export default function QuizScreen() {
                   if (floorStr) {
                       const floor = JSON.parse(floorStr);
                       
+                      // Conta exatamente quantas o aluno acertou (os "hits")
                       let correctAnswers = 0;
                       questions.forEach(q => {
                           if (userAnswers[q.id] === q.correctIndex) correctAnswers++;
                       });
                       
-                      const performanceScore = Math.round((correctAnswers / towerTargetCount) * 1000) || 500;
-                      const earnedStars = correctAnswers >= towerTargetCount * 0.8 ? 3 : correctAnswers >= towerTargetCount * 0.5 ? 2 : 1;
-
-                      // 🚨 CORREÇÃO DEFINITIVA: Usa a rota '/tower/submit' configurada no seu backend (server/index.js)
-                      // e envia a estrutura de dados que o endpoint espera.
+                      // 🚨 CORREÇÃO: Envia 'hits' em vez de 'score', como o novo backend exige!
                       await apiRequest('/tower/submit', 'POST', { 
                           floorId: floor.id, 
-                          score: performanceScore,
-                          stars: earnedStars 
+                          hits: correctAnswers // Aqui mandamos os acertos reais
                       });
                   }
                   
-                  // Respeita o bypass do roteamento
                   practice.finalizeWithPartial(true); 
                   sessionStorage.removeItem('studr_exam_mode'); 
                   
-                  // Redirecionamento limpo para a Torre para refletir a progressão
                   navigate(AppView.TOWER);
               } catch (err) {
                   console.error("Erro ao salvar progresso da torre:", err);
@@ -114,7 +108,6 @@ export default function QuizScreen() {
   const cancelAction = () => {
     if (isTowerMode) {
       sessionStorage.removeItem('studr_exam_mode');
-      // Impede o sequestro de rota
       practice.cancelPractice(true); 
       navigate(AppView.TOWER);
     } else {
@@ -140,7 +133,6 @@ export default function QuizScreen() {
 
   return (
     <div className="max-w-4xl mx-auto pt-6 px-4 pb-24">
-      {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 gap-4 transition-colors">
         <Button
           variant="outline"
@@ -190,7 +182,6 @@ export default function QuizScreen() {
         </div>
       </div>
 
-      {/* Question Area */}
       {loading && !currentQ ? (
         <div className="flex flex-col items-center justify-center p-12 w-full animate-fade-in">
           <LoadingSpinner size="md" />
@@ -233,7 +224,6 @@ export default function QuizScreen() {
         )
       )}
 
-      {/* Sticky Footer Controls */}
       <div className="fixed bottom-0 left-0 w-full bg-white dark:bg-slate-900 border-t border-gray-100 dark:border-slate-800 p-4 shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.1)] dark:shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.3)] z-50 backdrop-blur-md bg-white/90 dark:bg-slate-900/90 transition-colors">
         <div className="max-w-4xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
 
@@ -274,7 +264,7 @@ export default function QuizScreen() {
             {isFinalizing ? (
               <div className="flex items-center gap-2 text-white">
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                Processando Desempenho...
+                Processando...
               </div>
             ) : loading && isLastLoaded ? (
               <div className="flex items-center gap-2 text-white">
