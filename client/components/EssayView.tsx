@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { EssayTheme, EssayCorrection } from '../types';
 import { generateEssayTheme, evaluateEssay } from '../services/aiClientService';
 import { Button, Card, LoadingSpinner, Badge, FullPageLoader } from './UIComponents';
+import { useTimer, calculateEssayTimeLimit, formatTime } from '../hooks/useTimer';
 
 interface EssayViewProps {
   onBack: () => void;
@@ -20,6 +21,60 @@ const EssayView: React.FC<EssayViewProps> = ({ onBack, onSuccess }) => {
   const [writingStarted, setWritingStarted] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // --- MOTOR DA BATALHA FINAL ---
+  const essayTextRef = useRef(""); 
+  const [towerLevel, setTowerLevel] = useState(1);
+  const [isTowerMode, setIsTowerMode] = useState(false);
+
+  const telemetry = useRef({ keystrokes: 0, pausesOver5s: 0, paragraphCount: 0 });
+  const lastTypingTime = useRef<number>(Date.now());
+
+  useEffect(() => {
+    const towerFloorStr = sessionStorage.getItem('studr_current_tower_floor');
+    if (towerFloorStr) {
+      setIsTowerMode(true);
+      setTowerLevel(JSON.parse(towerFloorStr).floorNumber || 1);
+    }
+  }, []);
+
+  const timer = useTimer(() => {
+    if (step === 'WRITING') {
+      handleFinalSubmit(essayTextRef.current);
+    }
+  });
+
+  const handleFinalSubmit = useCallback(async (forcedText?: string) => {
+    const currentText = forcedText || essayTextRef.current;
+    if (!theme || !currentText.trim()) return;
+
+    setLoading(true);
+    try {
+      telemetry.current.paragraphCount = currentText.split(/\n\s*\n/).filter(p => p.trim() !== '').length;
+      
+      let performanceData = null;
+      if (isTowerMode) {
+        performanceData = {
+          towerLevel,
+          maxTime: timer.maxTime,
+          timeSpentSeconds: timer.maxTime - timer.timeRemaining,
+          telemetry: telemetry.current
+        };
+      }
+
+      const correction = await (evaluateEssay as any)(theme.title, currentText, performanceData);
+      setResult(correction);
+      timer.stopTimer();
+      setStep('RESULT');
+      if (onSuccess) onSuccess();
+    } catch (e) {
+      alert("Erro ao corrigir redação.");
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }, [theme, towerLevel, isTowerMode, onSuccess, timer]);
+  // -----------------------------
+
   // Start timer only when user clicks "Iniciar Redação", stop on RESULT
   useEffect(() => {
     if (writingStarted && step === 'WRITING') {
@@ -37,9 +92,26 @@ const EssayView: React.FC<EssayViewProps> = ({ onBack, onSuccess }) => {
     };
   }, [writingStarted, step]);
 
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setEssayText(e.target.value);
+    essayTextRef.current = e.target.value;
+  };
+
+  const handleKeyDown = () => {
+    telemetry.current.keystrokes += 1;
+    const now = Date.now();
+    if (now - lastTypingTime.current > 5000) {
+      telemetry.current.pausesOver5s += 1;
+    }
+    lastTypingTime.current = now;
+  };
+
   const handleStartWriting = () => {
     setWritingStarted(true);
     setElapsedSeconds(0);
+    const limit = isTowerMode ? calculateEssayTimeLimit(towerLevel) : 3600;
+    timer.startTimer(limit);
+    lastTypingTime.current = Date.now();
   };
 
   const formatElapsed = (seconds: number) => {
@@ -54,8 +126,9 @@ const EssayView: React.FC<EssayViewProps> = ({ onBack, onSuccess }) => {
       const newTheme = await generateEssayTheme();
       setTheme(newTheme);
       setEssayText("");
-      setElapsedSeconds(0);
+      essayTextRef.current = "";
       setWritingStarted(false);
+      timer.resetTimer();
       setStep('WRITING');
     } catch (e) {
       alert("Erro ao gerar tema. Tente novamente.");
@@ -73,10 +146,8 @@ const EssayView: React.FC<EssayViewProps> = ({ onBack, onSuccess }) => {
 
     setLoading(true);
     try {
-      const correction = await evaluateEssay(theme.title, essayText);
-      setResult(correction);
-      setStep('RESULT');
-      if (onSuccess) onSuccess();
+      handleFinalSubmit();
+      return;
     } catch (e) {
       alert("Erro ao corrigir redação.");
       console.error(e);
@@ -116,6 +187,23 @@ const EssayView: React.FC<EssayViewProps> = ({ onBack, onSuccess }) => {
       />
     );
   }
+  
+  // Classes Dinâmicas de Tensão (Sistema HUD)
+  let hudBorderClass = "border-slate-200 dark:border-slate-700";
+  let hudTextClass = "text-slate-500 dark:text-slate-400";
+  let textShadow = "";
+  
+  if (timer.isAlertPhase) {
+    hudBorderClass = "border-yellow-500/50 shadow-[0_0_15px_rgba(234,179,8,0.1)]";
+    hudTextClass = "text-yellow-600 dark:text-yellow-500 font-bold";
+  } else if (timer.isCriticalPhase) {
+    hudBorderClass = "border-red-500/80 shadow-[0_0_30px_rgba(239,68,68,0.2)] animate-pulse";
+    hudTextClass = "text-red-600 dark:text-red-500 font-black animate-pulse";
+  } else if (timer.isFinalBattle) {
+    hudBorderClass = "border-red-600 bg-red-950/10 shadow-[0_0_50px_rgba(239,68,68,0.5)]";
+    hudTextClass = "text-red-600 text-lg font-black animate-ping";
+    textShadow = "drop-shadow-[0_0_8px_rgba(239,68,68,0.8)] text-red-50";
+  }
 
   return (
     <div className="max-w-7xl mx-auto p-3 sm:p-6 animate-fade-in">
@@ -128,6 +216,7 @@ const EssayView: React.FC<EssayViewProps> = ({ onBack, onSuccess }) => {
           </h1>
         </div>
         <div className="hidden sm:flex items-center gap-3">
+          {isTowerMode && <Badge color="purple" className="animate-pulse">PRÉDIO {towerLevel}</Badge>}
           <Badge color="blue">Padrão ENEM {new Date().getFullYear()}</Badge>
           <Badge color="green">Tecnologia Gemini 1.5 Pro</Badge>
         </div>
@@ -212,7 +301,7 @@ const EssayView: React.FC<EssayViewProps> = ({ onBack, onSuccess }) => {
           {/* Main: Writing Area (Right on Desktop) */}
           <div className="lg:col-span-8 flex flex-col">
             {/* Toolbar */}
-            <div className="bg-slate-50 dark:bg-slate-800/80 rounded-t-2xl border border-slate-200 dark:border-slate-700 border-b-0 p-4 flex justify-between items-center text-xs font-bold text-slate-500 dark:text-slate-400 shadow-sm">
+            <div className={`bg-slate-50 dark:bg-slate-800/80 rounded-t-2xl border border-b-0 p-4 flex justify-between items-center text-xs font-bold shadow-sm transition-colors ${hudBorderClass} ${hudTextClass}`}>
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-full border dark:border-slate-700">
                   <span className="w-2 h-2 rounded-full bg-green-500"></span>
@@ -221,7 +310,7 @@ const EssayView: React.FC<EssayViewProps> = ({ onBack, onSuccess }) => {
                 <div className="hidden sm:flex items-center gap-3 opacity-60">
                    <span>Foco Total: ON</span>
                    <span className="h-4 w-px bg-slate-200 dark:bg-slate-700"></span>
-                   <span>⏱ {formatElapsed(elapsedSeconds)}</span>
+                   <span>⏱ {formatTime(timer.timeRemaining)}</span>
                 </div>
               </div>
               <div className="flex gap-4">
@@ -236,11 +325,12 @@ const EssayView: React.FC<EssayViewProps> = ({ onBack, onSuccess }) => {
                <div className="absolute left-0 top-0 bottom-0 w-3 bg-red-400/20 dark:bg-red-500/10 pointer-events-none z-10 rounded-bl-2xl"></div>
 
                <textarea
-                className={`w-full flex-1 min-h-[70vh] pl-8 pr-8 py-8 border border-slate-200 dark:border-slate-700 rounded-b-2xl focus:ring-8 focus:ring-enem-blue/5 focus:outline-none resize-none font-serif text-lg md:text-xl leading-[2.1] text-slate-800 dark:text-slate-100 shadow-2xl shadow-slate-200/50 dark:shadow-none transition-all custom-scrollbar ${writingStarted ? 'bg-white dark:bg-slate-900' : 'bg-slate-50 dark:bg-slate-800/50 cursor-not-allowed opacity-60'}`}
+                className={`w-full flex-1 min-h-[70vh] pl-8 pr-8 py-8 border rounded-b-2xl focus:ring-8 focus:outline-none resize-none font-serif text-lg md:text-xl leading-[2.1] text-slate-800 dark:text-slate-100 shadow-2xl transition-all custom-scrollbar ${hudBorderClass} ${textShadow} ${writingStarted ? (timer.isFinalBattle ? 'bg-red-950/40 focus:ring-red-500/20' : 'bg-white dark:bg-slate-900 focus:ring-enem-blue/5') : 'bg-slate-50 dark:bg-slate-800/50 cursor-not-allowed opacity-60'}`}
                 placeholder={writingStarted ? "Inicie sua introdução respeitando o tema e a estrutura argumentativa (Introdução, Desenvolvimento 1 e 2, Conclusão)..." : "Clique em \"Iniciar Redação\" para começar a escrever..."}
                 value={essayText}
-                onChange={(e) => setEssayText(e.target.value)}
-                disabled={!writingStarted}
+                onChange={handleTextChange}
+                onKeyDown={handleKeyDown}
+                disabled={!writingStarted || timer.isTimeUp || loading}
                 autoFocus={writingStarted}
               />
             </div>

@@ -312,26 +312,27 @@ export function AppRouter() {
           isLoading={practiceLoading}
         />
       )}
+      
       {/* 🗼 TOWER VIEW CONECTADA AO GAME LOOP */}
       {view === AppView.TOWER && (
         <TowerView 
            onBack={() => navigate(AppView.HOME)} 
            onBattleStart={(floor) => {
+              // REGRA ABSOLUTA: O 5º Andar é SEMPRE Redação (Chefão)
+              const isEssayFloor = floor.floorNumber === 5 || floor.type === 'ESSAY';
+              
               // Salva a configuração do andar na sessão
               sessionStorage.setItem('studr_current_tower_floor', JSON.stringify({
-                 id: floor.id, targetScore: floor.targetScore, floorNumber: floor.floorNumber, type: floor.type
+                 id: floor.id, targetScore: floor.targetScore, floorNumber: floor.floorNumber, type: isEssayFloor ? 'ESSAY' : floor.type
               }));
 
-              if (floor.type === 'ESSAY') {
-                 // É o Chefão: Vai pra tela de redação, passando o tema exato da torre
-                 sessionStorage.setItem('studr_tower_essay_theme', floor.topic);
+              if (isEssayFloor) {
+                 // Roteamento forçado para a Redação com o Tema da Torre
+                 sessionStorage.setItem('studr_tower_essay_theme', floor.topic || "Tema Oculto da Torre");
                  navigate(AppView.ESSAY);
               } else {
-                 // É um Andar Normal: Usa a Geração Rápida da IA (5 questões do Tópico do andar)
+                 // É um Andar Normal: O 'floor.topic' atuará como a ÚNICA matéria específica
                  sessionStorage.setItem('studr_exam_mode', 'TOWER');
-                 
-                 // Chame o motor de prática da IA, mas ele vai identificar o modo TOWER 
-                 // e montar uma prova com limite exato para a avaliação final de estrelas.
                  startPractice(floor.area, floor.topic, false); 
               }
            }} 

@@ -40,6 +40,25 @@ export const PRACTICE_LOADING_STEPS = [
   'Quase pronto...',
 ];
 
+// Reutilizamos a lógica de cálculo estrita da Torre para limitar o Backend
+const getTowerQuestionCount = (level: number): number => {
+  if (level <= 5) return level + 4; 
+  if (level < 15) return 12;        
+  if (level < 20) return 15;
+  if (level < 25) return 18;
+  if (level < 30) return 22;
+  if (level < 35) return 25;        
+  if (level < 40) return 30;
+  if (level < 45) return 35;
+  if (level < 50) return 40;        
+  if (level < 60) return 45;
+  if (level < 70) return 60;        
+  if (level < 80) return 75;
+  if (level < 90) return 90;
+  if (level < 100) return 120;
+  return 180;                       
+};
+
 const PracticeContext = createContext<PracticeContextValue | null>(null);
 
 export function PracticeProvider({ children }: PropsWithChildren) {
@@ -105,15 +124,40 @@ export function PracticeProvider({ children }: PropsWithChildren) {
   const loadMoreInBackground = useCallback((): Promise<number> => {
     // If already fetching, return the in-progress promise so callers can await it
     if (isFetchingRef.current && fetchPromiseRef.current) return fetchPromiseRef.current;
+    
+    // VERIFICAÇÃO DE BLOQUEIO DA TORRE INFINITA
+    const isTowerMode = sessionStorage.getItem('studr_exam_mode') === 'TOWER';
+    
+    // 🚨 SOLUÇÃO ERRO 500: Nunca peça mais de 5 questões por vez para não crashar a IA
+    let fetchTargetAmount = 5; 
+
+    if (isTowerMode) {
+       const floorStr = sessionStorage.getItem('studr_current_tower_floor');
+       if (floorStr) {
+           const floor = JSON.parse(floorStr);
+           const absoluteLimit = getTowerQuestionCount(floor.floorNumber || 1);
+           
+           // Trava de Segurança: Se chegou no limite da Jornada, para de gerar.
+           if (questions.length >= absoluteLimit) {
+               return Promise.resolve(0); 
+           }
+           fetchTargetAmount = Math.min(5, absoluteLimit - questions.length);
+       }
+    }
+
     const remaining = questions.length - currentQuestionIndex;
-    if (remaining > 5) return Promise.resolve(0);
+    // Puxa mais questões escondido quando faltarem apenas 2 pro buffer secar
+    if (remaining > 2) return Promise.resolve(0); 
 
     isFetchingRef.current = true;
     const promise = (async () => {
       try {
         const currentSubjects = questions.map(q => q.subject).filter(Boolean) as string[];
         const excludeTopics = Array.from(new Set(currentSubjects)).slice(-10);
-        const newBatch = await fetchBatchWithRetry(selectedArea, 15, activeSessionTopic || undefined, excludeTopics, isReviewSession);
+        
+        // Dispara a IA com a quantidade exata limitada
+        const newBatch = await fetchBatchWithRetry(selectedArea, fetchTargetAmount, activeSessionTopic || undefined, excludeTopics, isReviewSession);
+        
         setQuestions(prev => [...prev, ...newBatch]);
         return newBatch.length;
       } catch {
@@ -169,7 +213,23 @@ export function PracticeProvider({ children }: PropsWithChildren) {
     }, 3000);
 
     try {
-      const initialBatch = await generateQuestionBatch(area, 15, topic, [], isReview);
+      // Verifica limite imediato no primeiro disparo
+      const isTowerMode = sessionStorage.getItem('studr_exam_mode') === 'TOWER';
+      
+      // 🚨 SOLUÇÃO ERRO 500: Inicia a sessão APENAS com 5 questões de uma vez
+      let initialFetchCount = 5; 
+      
+      if (isTowerMode) {
+         const floorStr = sessionStorage.getItem('studr_current_tower_floor');
+         if (floorStr) {
+             const floor = JSON.parse(floorStr);
+             const absoluteLimit = getTowerQuestionCount(floor.floorNumber || 1);
+             initialFetchCount = Math.min(5, absoluteLimit);
+         }
+      }
+
+      // 'topic' aqui é a Matéria Específica repassada pelo AppRouter
+      const initialBatch = await generateQuestionBatch(area, initialFetchCount, topic, [], isReview);
       setQuestions(initialBatch);
       setCurrentQuestionIndex(0);
       setUserAnswers({});
@@ -211,7 +271,12 @@ export function PracticeProvider({ children }: PropsWithChildren) {
       const added = await loadMoreInBackground();
       setLoading(false);
       if (added <= 0) {
-        openFetchError();
+        // Se adicionou 0 e estamos na torre, significa que não tem mais pra adicionar.
+        // O QuizScreen intercepta o fim via handleNext dele, então isso serve apenas para previnir bugs.
+        const isTowerMode = sessionStorage.getItem('studr_exam_mode') === 'TOWER';
+        if (!isTowerMode) {
+           openFetchError();
+        }
         return;
       }
     }

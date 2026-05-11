@@ -353,55 +353,67 @@ export const generateEssayTheme = async () => {
     return parseSafeJSON(await executeHybridAI(messages, true, 1, 20000));
 };
 
-export const evaluateEssay = async (theme, essayText) => {
-    // PROMPT BLINDADO E RIGOROSO DO ENEM
-    const prompt = `
-      Você é um Corretor Oficial do ENEM, rigoroso e técnico. Corrija a redação abaixo sobre o tema: "${theme}".
+export const evaluateEssay = async (theme, essayText, performanceData = null) => {
+    const performanceContext = performanceData ? `
+      METADADOS DE PERFORMANCE SOB PRESSÃO (MODO JORNADA - PRÉDIO ${performanceData.towerLevel}):
+      - Tempo Limite do Andar: ${performanceData.maxTime}s
+      - Tempo Gasto Pelo Aluno: ${performanceData.timeSpentSeconds}s (Restaram: ${performanceData.maxTime - performanceData.timeSpentSeconds}s)
+      - Hesitações (Pausas > 5s): ${performanceData.telemetry.pausesOver5s} vezes.
+      - Total de Caracteres/Toques: ${performanceData.telemetry.keystrokes}
       
-      REGRAS ABSOLUTAS (OBRIGATÓRIO):
-      1. A nota de cada competência SÓ PODE SER: 0, 40, 80, 120, 160 ou 200. É PROIBIDO DAR NOTAS QUEBRADAS COMO 85, 90, 72.
-      2. O "totalScore" DEVE SER a soma exata das 5 competências.
-      3. VOCÊ NÃO PODE INVENTAR NOMES DE COMPETÊNCIAS. USE EXATAMENTE ESTAS 5:
-         ID 1: "Domínio da Norma Padrão"
-         ID 2: "Compreensão e Repertório"
-         ID 3: "Organização e Argumentação"
-         ID 4: "Coesão e Conectivos"
-         ID 5: "Proposta de Intervenção"
+      INSTRUÇÃO ADICIONAL PARA O AVALIADOR:
+      No campo "generalFeedback", você DEVE agir como um Treinador de Alta Performance do ENEM. Analise como o aluno geriu o tempo e a fadiga. Se o tempo estourou ou as pausas foram altas, seja implacável alertando sobre resistência mental e fadiga. Se terminou no tempo com coesão, elogie o preparo tático sob pressão extrema da Torre.
+    ` : "";
 
-      REDAÇÃO DO ALUNO:
-      """
-      ${essayText}
-      """
+    // PROMPT BLINDADO E RIGOROSO DO ENEM
+    const prompt = `
+      Você é um Corretor Oficial do ENEM, rigoroso e técnico. Corrija a redação abaixo sobre o tema: "${theme}".
+      ${performanceContext}
+      
+      REGRAS ABSOLUTAS (OBRIGATÓRIO):
+      1. A nota de cada competência SÓ PODE SER: 0, 40, 80, 120, 160 ou 200. É PROIBIDO DAR NOTAS QUEBRADAS COMO 85, 90, 72.
+      2. O "totalScore" DEVE SER a soma exata das 5 competências.
+      3. VOCÊ NÃO PODE INVENTAR NOMES DE COMPETÊNCIAS. USE EXATAMENTE ESTAS 5:
+         ID 1: "Domínio da Norma Padrão"
+         ID 2: "Compreensão e Repertório"
+         ID 3: "Organização e Argumentação"
+         ID 4: "Coesão e Conectivos"
+         ID 5: "Proposta de Intervenção"
 
-      Retorne APENAS um objeto JSON válido (sem marcadores markdown). Formato:
-      {
-        "totalScore": 800,
-        "generalFeedback": "Parágrafo resumindo a performance geral do aluno e nível do texto.",
-        "strengths": ["Ponto forte 1", "Ponto forte 2"],
-        "weaknesses": ["Ponto de melhoria 1", "Ponto de melhoria 2"],
-        "competencies": [
-          { "id": 1, "name": "Domínio da Norma Padrão", "score": 160, "feedback": "Análise gramatical detalhada..." },
-          { "id": 2, "name": "Compreensão e Repertório", "score": 160, "feedback": "Análise do repertório..." },
-          { "id": 3, "name": "Organização e Argumentação", "score": 160, "feedback": "Análise do projeto de texto..." },
-          { "id": 4, "name": "Coesão e Conectivos", "score": 160, "feedback": "Análise dos elementos coesivos..." },
-          { "id": 5, "name": "Proposta de Intervenção", "score": 160, "feedback": "Análise dos 5 elementos da PI..." }
-        ]
-      }
-    `;
+      REDAÇÃO DO ALUNO:
+      """
+      ${essayText}
+      """
 
-    const messages = [
-        { role: "system", content: "Corretor oficial do ENEM. Siga estritamente as regras de pontuação e matriz de referência do INEP. Retorne APENAS JSON." },
-        { role: "user", content: prompt }
-    ];
+      Retorne APENAS um objeto JSON válido (sem marcadores markdown). Formato:
+      {
+        "totalScore": 800,
+        "generalFeedback": "Parágrafo resumindo a performance geral do aluno e nível do texto.",
+        "strengths": ["Ponto forte 1", "Ponto forte 2"],
+        "weaknesses": ["Ponto de melhoria 1", "Ponto de melhoria 2"],
+        "competencies": [
+          { "id": 1, "name": "Domínio da Norma Padrão", "score": 160, "feedback": "Análise gramatical detalhada..." },
+          { "id": 2, "name": "Compreensão e Repertório", "score": 160, "feedback": "Análise do repertório..." },
+          { "id": 3, "name": "Organização e Argumentação", "score": 160, "feedback": "Análise do projeto de texto..." },
+          { "id": 4, "name": "Coesão e Conectivos", "score": 160, "feedback": "Análise dos elementos coesivos..." },
+          { "id": 5, "name": "Proposta de Intervenção", "score": 160, "feedback": "Análise dos 5 elementos da PI..." }
+        ]
+      }
+    `;
 
-    const content = parseSafeJSON(await executeHybridAI(messages, true, 1, 30000));
-    
-    // Trava final de segurança para garantir a soma correta
-    if (content.competencies && Array.isArray(content.competencies)) {
-      content.totalScore = content.competencies.reduce((acc, curr) => acc + (curr.score || 0), 0);
-    }
-    
-    return content;
+    const messages = [
+        { role: "system", content: "Corretor oficial do ENEM. Siga estritamente as regras de pontuação e matriz de referência do INEP. Retorne APENAS JSON." },
+        { role: "user", content: prompt }
+    ];
+
+    const content = parseSafeJSON(await executeHybridAI(messages, true, 1, 30000));
+    
+    // Trava final de segurança para garantir a soma correta
+    if (content.competencies && Array.isArray(content.competencies)) {
+      content.totalScore = content.competencies.reduce((acc, curr) => acc + (curr.score || 0), 0);
+    }
+    
+    return content;
 };
 
 export const getGrade1000Example = async (theme) => {

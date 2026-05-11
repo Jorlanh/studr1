@@ -1,13 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppView } from '../types';
 import { useNavigation } from '../contexts/NavigationContext';
 import { usePractice, PRACTICE_LOADING_STEPS } from '../contexts/PracticeContext';
 import { useMock } from '../contexts/MockContext';
 import QuestionCard from './QuestionCard';
 import { Button, Badge, LoadingSpinner } from './UIComponents';
+import { apiRequest } from '../services/apiService'; // 🚨 IMPORTAÇÃO CRÍTICA ADICIONADA
+
+// --- SISTEMA DE PROGRESSÃO DA TORRE (JORNADA TRI) ---
+export function getTowerQuestionCount(level: number): number {
+  if (level <= 5) return level + 4; // 1->5, 2->6, 3->7, 4->8, 5->9
+  if (level < 15) return 12;        // Prédios intermediários iniciais
+  if (level < 20) return 15;
+  if (level < 25) return 18;
+  if (level < 30) return 22;
+  if (level < 35) return 25;        // Nível avançado
+  if (level < 40) return 30;
+  if (level < 45) return 35;
+  if (level < 50) return 40;        // Nível elite
+  if (level < 60) return 45;
+  if (level < 70) return 60;        // Nível lendário
+  if (level < 80) return 75;
+  if (level < 90) return 90;
+  if (level < 100) return 120;
+  return 180;                       // Prédio 100+ -> Simulado Completo
+}
 
 export default function QuizScreen() {
-  const { view } = useNavigation();
+  const { view, navigate } = useNavigation();
   const isMock = view === AppView.MOCK_EXAM;
 
   const practice = usePractice();
@@ -16,6 +36,25 @@ export default function QuizScreen() {
   // Estado novo para o Loading ao clicar em Finalizar
   const [isFinalizing, setIsFinalizing] = useState(false);
 
+  // --- ESTADOS DA JORNADA TORRE ---
+  const [isTowerMode, setIsTowerMode] = useState(false);
+  const [towerLevel, setTowerLevel] = useState(1);
+  const [towerTargetCount, setTowerTargetCount] = useState(5);
+
+  useEffect(() => {
+    const mode = sessionStorage.getItem('studr_exam_mode');
+    if (mode === 'TOWER' && !isMock) {
+      setIsTowerMode(true);
+      const floorStr = sessionStorage.getItem('studr_current_tower_floor');
+      if (floorStr) {
+        const floor = JSON.parse(floorStr);
+        const level = floor.floorNumber || 1;
+        setTowerLevel(level);
+        setTowerTargetCount(getTowerQuestionCount(level));
+      }
+    }
+  }, [isMock]);
+
   // Pull session state from whichever context is active
   const questions = isMock ? mock.questions : practice.questions;
   const userAnswers = isMock ? mock.userAnswers : practice.userAnswers;
@@ -23,22 +62,72 @@ export default function QuizScreen() {
   const loading = isMock ? mock.loading : practice.loading;
   const handleAnswerSelect = isMock ? mock.handleAnswerSelect : practice.handleAnswerSelect;
   
-  // Custom HandleNext para injetar o Loader de Finalização
+  // Custom HandleNext para injetar o Loader de Finalização e Salvar a Torre
   const handleNext = async () => {
-      const targetCount = isMock ? mock.simuladoTargetCount : 0;
-      const isFinished = isMock && (currentQuestionIndex + 1 >= targetCount || mock.isTimeUp);
+      const mockTarget = isMock ? mock.simuladoTargetCount : 0;
+      const isMockFinished = isMock && (currentQuestionIndex + 1 >= mockTarget || mock.isTimeUp);
+      const isTowerFinished = !isMock && isTowerMode && (currentQuestionIndex + 1 >= towerTargetCount);
 
-      if (isFinished) {
+      if (isMockFinished || isTowerFinished) {
           setIsFinalizing(true); // Trava a tela
-          await mock.handleNext(); // Manda pro backend calcular o TRI
-          setIsFinalizing(false); // Libera a tela (embora já vá ter mudado de rota)
+          if (isMock) {
+              await mock.handleNext(); // Manda pro backend calcular o TRI do Simulado
+          } else {
+              try {
+                  // 🚨 INCREMENTO CRÍTICO: Registrar a vitória no Backend para liberar o próximo Andar
+                  const floorStr = sessionStorage.getItem('studr_current_tower_floor');
+                  
+                  if (floorStr) {
+                      const floor = JSON.parse(floorStr);
+                      
+                      // Calcula uma pontuação simulada baseada em quantos acertos o usuário teve
+                      let correctAnswers = 0;
+                      questions.forEach(q => {
+                          if (userAnswers[q.id] === q.correctIndex) correctAnswers++;
+                      });
+                      
+                      const performanceScore = Math.round((correctAnswers / towerTargetCount) * 1000) || 500;
+                      const earnedStars = correctAnswers >= towerTargetCount * 0.8 ? 3 : correctAnswers >= towerTargetCount * 0.5 ? 2 : 1;
+
+                      // Envia para o banco de dados salvar o andar atual
+                      await apiRequest('/tower/floor', 'POST', { 
+                          building: floor.building || towerLevel,
+                          floorNumber: floor.floorNumber || 1,
+                          stars: earnedStars,
+                          score: performanceScore 
+                      }).catch(err => console.warn("Aviso: Falha isolada na API da Torre.", err));
+                  }
+                  
+                  // Limpa a sessão local e salva status parcial do quiz
+                  practice.finalizeWithPartial(); 
+                  sessionStorage.removeItem('studr_exam_mode'); 
+                  
+                  // Força o roteamento de volta para a subida da Torre
+                  setTimeout(() => {
+                    navigate(AppView.TOWER);
+                  }, 100);
+              } catch (err) {
+                  console.error("Erro ao salvar progresso da torre:", err);
+              }
+          }
+          setIsFinalizing(false); // Libera a tela 
       } else {
           isMock ? await mock.handleNext() : await practice.handleNext();
       }
   };
 
   const handlePrevious = isMock ? mock.handlePrevious : practice.handlePrevious;
-  const cancelAction = isMock ? mock.cancelMock : practice.cancelPractice;
+  
+  // Custom Cancel Action para não quebrar a navegação da Torre
+  const cancelAction = () => {
+    if (isTowerMode) {
+      sessionStorage.removeItem('studr_exam_mode');
+      practice.cancelPractice();
+      setTimeout(() => navigate(AppView.TOWER), 50);
+    } else {
+      isMock ? mock.cancelMock() : practice.cancelPractice();
+    }
+  };
 
   // Practice-specific
   const loadingStep = practice.loadingStep;
@@ -52,7 +141,13 @@ export default function QuizScreen() {
   const currentQ = questions[currentQuestionIndex];
   const hasAnswered = userAnswers[currentQ?.id] !== undefined;
   const isLastLoaded = currentQuestionIndex === questions.length - 1;
-  const isSimuladoFinished = isMock && (currentQuestionIndex + 1 >= simuladoTargetCount || isTimeUp);
+  const isSimuladoOrTowerFinished = isMock 
+      ? (currentQuestionIndex + 1 >= simuladoTargetCount || isTimeUp)
+      : (isTowerMode && currentQuestionIndex + 1 >= towerTargetCount);
+
+  // Define visual label based on mode
+  const effectiveTargetCount = isMock ? simuladoTargetCount : (isTowerMode ? towerTargetCount : '∞');
+  const sessionHeaderTitle = isMock ? 'Simulado ENEM' : (isTowerMode ? `Batalha: Prédio ${towerLevel}` : 'Modo Prática Infinita');
 
   return (
     <div className="max-w-4xl mx-auto pt-6 px-4 pb-24">
@@ -63,7 +158,7 @@ export default function QuizScreen() {
           onClick={cancelAction}
           className="text-sm px-4 py-2 flex items-center gap-2 border-slate-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800"
         >
-          <span className="text-lg">←</span> {isMock ? 'Cancelar Simulado' : 'Cancelar Prática'}
+          <span className="text-lg">←</span> {isMock ? 'Cancelar Simulado' : (isTowerMode ? 'Fugir da Batalha' : 'Cancelar Prática')}
         </Button>
         <div className="flex items-center gap-3">
           <div className="h-2 w-24 bg-gray-100 dark:bg-slate-800 rounded-full overflow-hidden">
@@ -75,8 +170,8 @@ export default function QuizScreen() {
 
       <div className="flex justify-between items-center mb-8 animate-fade-in relative">
         <div className="flex flex-col items-center">
-          <div className="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-[0.2em]">
-            {isMock ? 'Simulado ENEM' : 'Modo Prática Infinita'}
+          <div className={`text-[10px] font-bold uppercase tracking-[0.2em] ${isTowerMode ? 'text-purple-500 animate-pulse' : 'text-gray-400 dark:text-slate-500'}`}>
+            {sessionHeaderTitle}
           </div>
           {isMock && (
             <div className={`text-4xl font-mono font-bold tabular-nums tracking-tighter ${isTimeUp ? 'text-red-500 animate-pulse' : 'text-enem-blue dark:text-blue-400'}`}>
@@ -86,7 +181,7 @@ export default function QuizScreen() {
           {!isMock && loading && (
             <div className="flex items-center gap-1.5 mt-1 text-[10px] text-enem-blue dark:text-blue-400 font-bold animate-pulse">
               <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
-              EXPANDINDO BANCO...
+              {isTowerMode ? 'GERANDO DESAFIOS DA TORRE...' : 'EXPANDINDO BANCO...'}
             </div>
           )}
         </div>
@@ -95,11 +190,11 @@ export default function QuizScreen() {
           <div className="font-bold text-gray-700 dark:text-slate-200 text-lg">
             Questão <span className="text-enem-blue dark:text-blue-400">{currentQuestionIndex + 1}</span>{' '}
             <span className="text-gray-400 dark:text-slate-500 font-normal text-sm">
-              / {isMock ? simuladoTargetCount : '∞'}
+              / {effectiveTargetCount}
             </span>
           </div>
           {currentQ && (
-            <Badge color="blue" className="mt-1 shadow-sm">
+            <Badge color={isTowerMode ? "purple" : "blue"} className="mt-1 shadow-sm">
               {currentQ.area}
             </Badge>
           )}
@@ -163,20 +258,20 @@ export default function QuizScreen() {
               ← Anterior
             </Button>
             <div className="text-xs text-gray-500 dark:text-slate-500 hidden md:flex items-center gap-1 self-center">
-              {isMock && hasAnswered && (
+              {(isMock || isTowerMode) && hasAnswered && (
                 <>
-                  <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
                   Salvo na nuvem
                 </>
               )}
             </div>
           </div>
 
-          {isMock && (
+          {(isMock || isTowerMode) && typeof effectiveTargetCount === 'number' && (
             <div className="hidden md:block flex-1 mx-8 bg-gray-100 dark:bg-slate-800 rounded-full h-1.5 order-1 md:order-2 overflow-hidden shadow-inner">
               <div
-                className="bg-enem-blue dark:bg-blue-500 h-full rounded-full transition-all duration-700 ease-out shadow-[0_0_8px_rgba(0,74,173,0.3)]"
-                style={{ width: `${(currentQuestionIndex / simuladoTargetCount) * 100}%` }}
+                className={`h-full rounded-full transition-all duration-700 ease-out shadow-lg ${isTowerMode ? 'bg-purple-600 shadow-purple-500/50' : 'bg-enem-blue dark:bg-blue-500 shadow-[0_0_8px_rgba(0,74,173,0.3)]'}`}
+                style={{ width: `${(currentQuestionIndex / effectiveTargetCount) * 100}%` }}
               />
             </div>
           )}
@@ -184,21 +279,23 @@ export default function QuizScreen() {
           <Button
             onClick={handleNext}
             disabled={(isLastLoaded && loading) || isFinalizing}
-            className="w-full md:w-auto shadow-xl order-1 md:order-3 hover:scale-105 transition-transform"
-            variant="primary"
+            className={`w-full md:w-auto shadow-xl order-1 md:order-3 hover:scale-105 transition-transform ${isSimuladoOrTowerFinished && isTowerMode ? 'bg-purple-600 hover:bg-purple-700' : ''}`}
+            variant={isSimuladoOrTowerFinished && isTowerMode ? 'default' : 'primary'}
           >
             {isFinalizing ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 text-white">
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                Calculando Nota TRI...
+                Processando Desempenho...
               </div>
             ) : loading && isLastLoaded ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 text-white">
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                 Expandindo...
               </div>
             ) : (
-              isSimuladoFinished ? 'Finalizar Simulado' : 'Próxima Questão →'
+              isSimuladoOrTowerFinished 
+                ? (isTowerMode ? 'Dominar Prédio 🏆' : 'Finalizar Simulado') 
+                : 'Próxima Questão →'
             )}
           </Button>
         </div>

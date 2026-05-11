@@ -91,6 +91,19 @@ export default function TowerView({ onBack, onBattleStart }: TowerViewProps) {
                     const qCount = getQuestionsPerBuilding(bId);
                     const isLastOfDistrict = DISTRICTS.some(d => d.end === bId);
 
+                    // --- CÁLCULO DA META MÉDIA DO PRÉDIO ---
+                    // Gera dados simulados (ou pega do BD) para os 5 andares do prédio
+                    const buildingFloors = Array.from({ length: 5 }).map((_, i) => {
+                        const floorNum = i + 1;
+                        return dbFloors.find((f: any) => f.building === bId && f.floorNumber === floorNum) || {
+                            id: `mock-${bId}-${floorNum}`, building: bId, floorNumber: floorNum, targetScore: 400 + (bId * 5), isBoss: floorNum === 5
+                        };
+                    });
+                    
+                    // Calcula a média das metas de todos os 5 andares
+                    const totalTargetScore = buildingFloors.reduce((sum, f) => sum + f.targetScore, 0);
+                    const averageTargetScore = Math.round(totalTargetScore / buildingFloors.length);
+
                     return (
                         <React.Fragment key={bId}>
                             {isLastOfDistrict && bId !== 100 && (
@@ -115,34 +128,33 @@ export default function TowerView({ onBack, onBattleStart }: TowerViewProps) {
                                         <span className={`text-4xl md:text-5xl font-black ${isUnlocked ? 'text-white' : 'text-slate-400'}`}>{bId}</span>
                                     </div>
                                     <div className="mt-3 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-1 rounded-xl shadow-sm">
-                                        <span className="text-[10px] font-black uppercase text-indigo-500">{qCount} Questões</span>
+                                        <span className="text-[10px] font-black uppercase text-indigo-500 block">{qCount} Questões</span>
                                     </div>
+                                    {/* EXIBIÇÃO DA META MÉDIA DO PRÉDIO */}
+                                    {(isUnlocked) && (
+                                        <div className="mt-2 bg-indigo-500/10 border border-indigo-500/20 px-3 py-1 rounded-xl text-center">
+                                            <span className="text-[9px] font-black uppercase text-indigo-400 block tracking-wider">Meta Média</span>
+                                            <span className="text-xs font-black text-indigo-500">{averageTargetScore}</span>
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="flex-1 flex flex-wrap gap-4 items-center ml-16 md:ml-0">
-                                    {Array.from({ length: 5 }).map((_, i) => {
+                                    {buildingFloors.map((floorData: any, i: number) => {
                                         const floorNum = i + 1;
-                                        const floorData = dbFloors.find((f: any) => f.building === bId && f.floorNumber === floorNum) || {
-                                            id: `mock-${bId}-${floorNum}`, building: bId, floorNumber: floorNum, targetScore: 400 + (bId * 5), isBoss: floorNum === 5
-                                        };
-
+                                        
                                         const isNodeCompleted = bId < highestBuilding || (bId === highestBuilding && floorNum < currentFloorNum);
                                         const isNodeCurrent = bId === highestBuilding && floorNum === currentFloorNum;
                                         const isNodeLocked = bId > highestBuilding || (bId === highestBuilding && floorNum > currentFloorNum);
 
                                         return (
                                             <div key={floorNum} className="flex flex-col items-center">
-                                                {/* 🔥 A META ESTAMPADA AQUI */}
-                                                {(isNodeCurrent || isNodeCompleted) && (
-                                                    <span className={`text-[10px] font-black uppercase mb-1 ${isNodeCompleted ? 'text-emerald-500' : 'text-slate-500'}`}>
-                                                        {floorData.isBoss ? 'Nota ' : 'TRI '}{floorData.targetScore}
-                                                    </span>
-                                                )}
-
+                                                {/* META INDIVIDUAL REMOVIDA DAQUI CONFORME SOLICITADO */}
+                                                
                                                 <button
                                                     onClick={() => isNodeCurrent && handleBattle(floorData)}
                                                     disabled={!isNodeCurrent || battlingId === floorData.id}
-                                                    className={`w-14 h-14 md:w-16 md:h-16 rounded-2xl flex flex-col items-center justify-center font-black transition-all transform
+                                                    className={`w-14 h-14 md:w-16 md:h-16 rounded-2xl flex flex-col items-center justify-center font-black transition-all transform mt-4
                                                         ${isNodeCompleted ? 'bg-emerald-500 text-white border-b-4 border-emerald-700' : 
                                                         isNodeCurrent ? 'bg-yellow-400 text-yellow-900 border-b-4 border-yellow-600 scale-110 hover:-translate-y-1 animate-pulse shadow-xl shadow-yellow-500/40 cursor-pointer' : 
                                                         'bg-slate-200 dark:bg-slate-800 text-slate-400 border-b-4 border-slate-300 dark:border-slate-700 cursor-not-allowed'}`}
