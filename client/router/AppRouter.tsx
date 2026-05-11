@@ -13,12 +13,13 @@ import HomeView from '../components/HomeView';
 import QuizScreen from '../components/QuizScreen';
 import ResultsView from '../components/ResultsView';
 import EssayView from '../components/EssayView';
+import TowerEssayView from '../components/TowerEssayView'; // 🚨 NOVO IMPORT AQUI
 import EssayModelBank from '../components/EssayModelBank';
 import StudyMapView from '../components/StudyMapView';
 import GamificationView from '../components/GamificationView';
 import ExamHistoryView from '../components/ExamHistoryView';
 import ExamReviewView from '../components/ExamReviewView';
-import TowerView from '../components/TowerView'; // 🗼 IMPORT ADICIONADO AQUI
+import TowerView from '../components/TowerView';
 import AdminShell from '../components/AdminShell';
 import LandingPage from '../components/LandingPageV3';
 import AffiliateLandingPage from '../components/AffiliateLandingPage';
@@ -297,12 +298,19 @@ export function AppRouter() {
       {view === AppView.EXAM_REVIEW && (
         <ExamReviewView examId={currentReviewExamId!} onBack={() => navigate(AppView.EXAM_HISTORY)} />
       )}
+      
+      {/* 🚨 CORREÇÃO: Renderização Condicional - Separando Jornada da Plataforma */}
       {view === AppView.ESSAY && (
-        <EssayView
-          onBack={() => navigate(AppView.HOME)}
-          onSuccess={() => fireGamificationEvent('FINISH_ESSAY')}
-        />
+         sessionStorage.getItem('studr_exam_mode') === 'TOWER' ? (
+            <TowerEssayView />
+         ) : (
+            <EssayView
+              onBack={() => navigate(AppView.HOME)}
+              onSuccess={() => fireGamificationEvent('FINISH_ESSAY')}
+            />
+         )
       )}
+
       {view === AppView.ESSAY_BANK && <EssayModelBank onBack={() => navigate(AppView.HOME)} />}
       {view === AppView.STUDY_GUIDE && <StudyMapView onBack={() => navigate(AppView.HOME)} />}
       {view === AppView.GAMIFICATION && (
@@ -328,7 +336,7 @@ export function AppRouter() {
 
               if (isEssayFloor) {
                  // Roteamento forçado para a Redação com o Tema da Torre
-                 sessionStorage.setItem('studr_tower_essay_theme', floor.topic || "Tema Oculto da Torre");
+                 sessionStorage.setItem('studr_exam_mode', 'TOWER'); // Garante que ative o TowerEssayView
                  navigate(AppView.ESSAY);
               } else {
                  // É um Andar Normal: O 'floor.topic' atuará como a ÚNICA matéria específica

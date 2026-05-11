@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Button, LoadingSpinner, Badge } from './UIComponents';
 import { Sword, Lock, Star } from 'lucide-react';
+import { getTowerQuestionCount } from './QuizScreen'; // Usado para exibição visual
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -18,14 +19,12 @@ const DISTRICTS = [
 
 function getDistrict(bNum: number) { return DISTRICTS.find(dist => bNum <= dist.end) || DISTRICTS[0]; }
 
-function getQuestionsPerBuilding(bNum: number) {
-    if (bNum < 2) return 5; if (bNum < 3) return 6; if (bNum < 4) return 7;
-    if (bNum < 5) return 8; if (bNum < 10) return 9; if (bNum < 15) return 12;
-    if (bNum < 20) return 15; if (bNum < 25) return 18; if (bNum < 30) return 22;
-    if (bNum < 35) return 25; if (bNum < 40) return 30; if (bNum < 45) return 35;
-    if (bNum < 50) return 40; if (bNum < 60) return 45; if (bNum < 70) return 60;
-    if (bNum < 80) return 75; if (bNum < 90) return 90; if (bNum < 100) return 120;
-    return 180;
+// Cálculo universal para renderizar a Meta de Acerto baseada no prédio
+function calculateTargetScoreForBuilding(buildingNum: number) {
+    const baseScore = 400;
+    const maxScore = 950;
+    const increment = (maxScore - baseScore) / 100;
+    return Math.floor(baseScore + (buildingNum * increment));
 }
 
 export default function TowerView({ onBack, onBattleStart }: TowerViewProps) {
@@ -35,11 +34,24 @@ export default function TowerView({ onBack, onBattleStart }: TowerViewProps) {
     const currentBuildingRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
+        // Limpa resíduos de batalhas antigas ao montar
+        sessionStorage.removeItem('studr_exam_mode');
+        sessionStorage.removeItem('studr_current_tower_floor');
+        
         const fetchTower = async () => {
             try {
-                const res = await fetch(`${API_URL}/api/tower/state`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('studr_token')}` } });
-                setTower(await res.json());
-            } catch (err) { console.error(err); } finally { setLoading(false); }
+                const res = await fetch(`${API_URL}/api/tower/state`, { 
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('studr_token')}` },
+                    cache: 'no-store' // 🚨 EVITA CACHE DO NAVEGADOR
+                });
+                if(!res.ok) throw new Error("Erro na API da Torre");
+                const data = await res.json();
+                setTower(data);
+            } catch (err) { 
+                console.error(err); 
+            } finally { 
+                setLoading(false); 
+            }
         };
         fetchTower();
     }, []);
@@ -54,19 +66,23 @@ export default function TowerView({ onBack, onBattleStart }: TowerViewProps) {
 
     const handleBattle = async (floorData: any) => {
         setBattlingId(floorData.id);
-        const enrichedFloorData = { ...floorData, questionsCount: getQuestionsPerBuilding(floorData.building) };
+        const enrichedFloorData = { ...floorData, questionsCount: getTowerQuestionCount(floorData.building) };
         setTimeout(() => { onBattleStart(enrichedFloorData); }, 800);
     };
 
     if (loading) return <div className="flex justify-center items-center h-[60vh]"><LoadingSpinner size="md" /></div>;
 
+    // A fonte da verdade sobre onde o jogador está vem exclusivamente destas duas variáveis
     const highestBuilding = tower?.currentBuilding || 1;
     const currentFloorNum = tower?.currentFloor || 1;
     const dbFloors = tower?.floors || [];
+    
+    // Gera todos os prédios de 100 até 1 (renderiza de cima para baixo)
     const ALL_BUILDINGS = Array.from({ length: 100 }, (_, i) => 100 - i);
 
     return (
         <div className="max-w-4xl mx-auto p-4 animate-fade-in relative pb-32 min-h-screen bg-slate-50 dark:bg-slate-950">
+            {/* HUD TOPO */}
             <div className="flex justify-between items-center mb-12 sticky top-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md z-50 p-4 rounded-b-3xl shadow-sm border-b border-slate-200 dark:border-slate-800">
                 <Button variant="outline" onClick={onBack} className="rounded-xl border-2">← Sair</Button>
                 <div className="text-center">
@@ -81,31 +97,22 @@ export default function TowerView({ onBack, onBattleStart }: TowerViewProps) {
                 </div>
             </div>
 
+            {/* MAPA DOS PRÉDIOS */}
             <div className="flex flex-col gap-8 relative pb-20">
                 <div className="absolute w-2 h-[98%] bg-slate-200 dark:bg-slate-800 left-16 md:left-[140px] top-10 z-0 rounded-full"></div>
 
                 {ALL_BUILDINGS.map((bId) => {
-                    const isUnlocked = bId <= highestBuilding;
-                    const isCurrentBuilding = bId === highestBuilding;
-                    const district = getDistrict(bId);
-                    const qCount = getQuestionsPerBuilding(bId);
-                    const isLastOfDistrict = DISTRICTS.some(d => d.end === bId);
-
-                    // --- CÁLCULO DA META MÉDIA DO PRÉDIO ---
-                    // Gera dados simulados (ou pega do BD) para os 5 andares do prédio
-                    const buildingFloors = Array.from({ length: 5 }).map((_, i) => {
-                        const floorNum = i + 1;
-                        return dbFloors.find((f: any) => f.building === bId && f.floorNumber === floorNum) || {
-                            id: `mock-${bId}-${floorNum}`, building: bId, floorNumber: floorNum, targetScore: 400 + (bId * 5), isBoss: floorNum === 5
-                        };
-                    });
+                    const isBuildingUnlocked = bId <= highestBuilding;
+                    const isBuildingCurrent = bId === highestBuilding;
                     
-                    // Calcula a média das metas de todos os 5 andares
-                    const totalTargetScore = buildingFloors.reduce((sum, f) => sum + f.targetScore, 0);
-                    const averageTargetScore = Math.round(totalTargetScore / buildingFloors.length);
+                    const district = getDistrict(bId);
+                    const qCount = getTowerQuestionCount(bId);
+                    const isLastOfDistrict = DISTRICTS.some(d => d.end === bId);
+                    const averageTargetScore = calculateTargetScoreForBuilding(bId);
 
                     return (
                         <React.Fragment key={bId}>
+                            {/* CAIXA DE DISTRITO */}
                             {isLastOfDistrict && bId !== 100 && (
                                 <div className={`w-full py-6 my-6 text-center rounded-3xl border-2 ${district.bg} ${district.border} opacity-90 backdrop-blur-sm z-10`}>
                                     <h2 className={`text-2xl md:text-4xl font-black uppercase tracking-widest ${district.color}`}>{district.name}</h2>
@@ -113,6 +120,7 @@ export default function TowerView({ onBack, onBattleStart }: TowerViewProps) {
                                 </div>
                             )}
                             
+                            {/* CHEFÃO FINAL 100 */}
                             {bId === 100 && (
                                 <div className="w-full py-12 mb-10 text-center rounded-3xl bg-gradient-to-r from-red-600 to-amber-900 border-4 border-yellow-500 shadow-[0_0_50px_rgba(239,68,68,0.5)] z-10">
                                     <h2 className="text-4xl md:text-6xl font-black uppercase tracking-tighter text-white drop-shadow-lg">Torre dos 1000 Pontos</h2>
@@ -120,49 +128,73 @@ export default function TowerView({ onBack, onBattleStart }: TowerViewProps) {
                                 </div>
                             )}
 
-                            <div ref={isCurrentBuilding ? currentBuildingRef : null} className={`relative flex flex-col md:flex-row items-start md:items-center gap-6 ${!isUnlocked ? 'opacity-40 grayscale' : 'z-20'}`}>
+                            {/* LINHA DO PRÉDIO */}
+                            <div ref={isBuildingCurrent ? currentBuildingRef : null} className={`relative flex flex-col md:flex-row items-start md:items-center gap-6 ${!isBuildingUnlocked ? 'opacity-40 grayscale' : 'z-20'}`}>
                                 
-                                <div className={`w-32 flex-shrink-0 flex flex-col items-center justify-center ${isCurrentBuilding ? 'scale-110 transform transition-all drop-shadow-2xl' : ''}`}>
-                                    <div className={`w-24 h-24 md:w-32 md:h-32 rounded-3xl flex flex-col items-center justify-center border-4 shadow-xl ${isUnlocked ? 'bg-gradient-to-br from-slate-800 to-slate-900 border-indigo-400' : 'bg-slate-200 dark:bg-slate-800 border-slate-300 dark:border-slate-700 shadow-none'}`}>
+                                {/* CAIXA DE INFORMAÇÃO DO PRÉDIO ESQUERDA */}
+                                <div className={`w-32 flex-shrink-0 flex flex-col items-center justify-center ${isBuildingCurrent ? 'scale-110 transform transition-all drop-shadow-2xl' : ''}`}>
+                                    <div className={`w-24 h-24 md:w-32 md:h-32 rounded-3xl flex flex-col items-center justify-center border-4 shadow-xl ${isBuildingUnlocked ? 'bg-gradient-to-br from-slate-800 to-slate-900 border-indigo-400' : 'bg-slate-200 dark:bg-slate-800 border-slate-300 dark:border-slate-700 shadow-none'}`}>
                                         <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Prédio</span>
-                                        <span className={`text-4xl md:text-5xl font-black ${isUnlocked ? 'text-white' : 'text-slate-400'}`}>{bId}</span>
+                                        <span className={`text-4xl md:text-5xl font-black ${isBuildingUnlocked ? 'text-white' : 'text-slate-400'}`}>{bId}</span>
                                     </div>
                                     <div className="mt-3 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-1 rounded-xl shadow-sm">
                                         <span className="text-[10px] font-black uppercase text-indigo-500 block">{qCount} Questões</span>
                                     </div>
-                                    {/* EXIBIÇÃO DA META MÉDIA DO PRÉDIO */}
-                                    {(isUnlocked) && (
+                                    {isBuildingUnlocked && (
                                         <div className="mt-2 bg-indigo-500/10 border border-indigo-500/20 px-3 py-1 rounded-xl text-center">
-                                            <span className="text-[9px] font-black uppercase text-indigo-400 block tracking-wider">Meta Média</span>
+                                            <span className="text-[9px] font-black uppercase text-indigo-400 block tracking-wider">Meta TRI</span>
                                             <span className="text-xs font-black text-indigo-500">{averageTargetScore}</span>
                                         </div>
                                     )}
                                 </div>
 
+                                {/* ANDARES DO PRÉDIO DIREITA */}
                                 <div className="flex-1 flex flex-wrap gap-4 items-center ml-16 md:ml-0">
-                                    {buildingFloors.map((floorData: any, i: number) => {
+                                    {Array.from({ length: 5 }).map((_, i) => {
                                         const floorNum = i + 1;
                                         
+                                        // Busca o andar real na base de dados para ver as estrelas
+                                        const dbFloor = dbFloors.find((f: any) => f.building === bId && f.floorNumber === floorNum);
+                                        
+                                        // 🚨 LÓGICA DE PROGRESSÃO BLINDADA 🚨
+                                        // Um nó está completo se o prédio for menor que o atual, OU se for o prédio atual E o andar for menor que o atual
                                         const isNodeCompleted = bId < highestBuilding || (bId === highestBuilding && floorNum < currentFloorNum);
+                                        
+                                        // Um nó é o atual se for o prédio exato E o andar exato
                                         const isNodeCurrent = bId === highestBuilding && floorNum === currentFloorNum;
-                                        const isNodeLocked = bId > highestBuilding || (bId === highestBuilding && floorNum > currentFloorNum);
+                                        
+                                        // Todos os outros estão trancados
+                                        const isNodeLocked = !isNodeCompleted && !isNodeCurrent;
+
+                                        // Mock object a ser enviado para a batalha
+                                        const floorPayload = dbFloor || {
+                                            id: `mock-${bId}-${floorNum}`,
+                                            building: bId,
+                                            floorNumber: floorNum,
+                                            targetScore: averageTargetScore,
+                                            isBoss: floorNum === 5,
+                                            area: 'Todas as Áreas',
+                                            topic: `Treino Geral do Andar ${floorNum}` // Adicionei isso para a IA não falhar se faltar tópico
+                                        };
 
                                         return (
                                             <div key={floorNum} className="flex flex-col items-center">
-                                                {/* META INDIVIDUAL REMOVIDA DAQUI CONFORME SOLICITADO */}
-                                                
                                                 <button
-                                                    onClick={() => isNodeCurrent && handleBattle(floorData)}
-                                                    disabled={!isNodeCurrent || battlingId === floorData.id}
+                                                    onClick={() => isNodeCurrent && handleBattle(floorPayload)}
+                                                    disabled={!isNodeCurrent || battlingId === floorPayload.id}
                                                     className={`w-14 h-14 md:w-16 md:h-16 rounded-2xl flex flex-col items-center justify-center font-black transition-all transform mt-4
                                                         ${isNodeCompleted ? 'bg-emerald-500 text-white border-b-4 border-emerald-700' : 
                                                         isNodeCurrent ? 'bg-yellow-400 text-yellow-900 border-b-4 border-yellow-600 scale-110 hover:-translate-y-1 animate-pulse shadow-xl shadow-yellow-500/40 cursor-pointer' : 
                                                         'bg-slate-200 dark:bg-slate-800 text-slate-400 border-b-4 border-slate-300 dark:border-slate-700 cursor-not-allowed'}`}
                                                 >
-                                                    {battlingId === floorData.id ? <LoadingSpinner size="sm" /> : isNodeLocked ? <Lock size={20} /> : floorData.isBoss ? <Sword size={24} /> : <span className="text-lg md:text-xl">{floorNum}</span>}
-                                                    {isNodeCompleted && floorData.stars > 0 && (
+                                                    {battlingId === floorPayload.id ? <LoadingSpinner size="sm" /> : 
+                                                     isNodeLocked ? <Lock size={20} /> : 
+                                                     floorPayload.isBoss ? <Sword size={24} /> : 
+                                                     <span className="text-lg md:text-xl">{floorNum}</span>}
+                                                    
+                                                    {isNodeCompleted && dbFloor?.stars > 0 && (
                                                         <div className="flex gap-0.5 mt-0.5">
-                                                            {Array(floorData.stars).fill(0).map((_, idx) => <span key={idx} className="text-[6px] md:text-[8px]">⭐</span>)}
+                                                            {Array(dbFloor.stars).fill(0).map((_, idx) => <span key={idx} className="text-[6px] md:text-[8px]">⭐</span>)}
                                                         </div>
                                                     )}
                                                 </button>

@@ -348,9 +348,44 @@ export const generateStudyPlan = async (results) => {
 };
 
 export const generateEssayTheme = async () => {
-    const prompt = `Gere tema de redação realista ENEM com 2 textos motivadores. JSON: { "title": "", "motivatingTexts": ["", ""] }`;
-    const messages = [{ role: "system", content: "Especialista em redação ENEM. Retorne APENAS um objeto JSON." }, { role: "user", content: prompt }];
-    return parseSafeJSON(await executeHybridAI(messages, true, 1, 20000));
+    // 🚨 INCREMENTO: Prompt de Elite para Temas Realistas do ENEM
+    const prompt = `
+        Você é a banca elaboradora da redação do ENEM.
+        A sua missão é gerar um TEMA INÉDITO, FORTE e ALTAMENTE PROVÁVEL de cair no próximo exame.
+        O tema DEVE abordar um problema social, tecnológico, ambiental ou cultural relevante no Brasil contemporâneo.
+        
+        Exemplos de temas com o padrão correto (NÃO COPIE ESTES, crie um novo):
+        - "Os desafios da regulamentação da inteligência artificial no Brasil"
+        - "Caminhos para combater a desigualdade no acesso à telemedicina no Brasil"
+        - "A importância da preservação dos biomas brasileiros para a segurança climática global"
+        
+        Além do tema, você deve fornecer de 2 a 3 textos motivadores. 
+        Estes textos devem ser pequenos fragmentos (de 3 a 5 linhas cada) que apresentem dados, recortes de notícias fictícias verossímeis, trechos de leis ou reflexões sociológicas que ajudem o aluno a entender a gravidade do problema.
+        
+        OBRIGATÓRIO: O retorno deve ser ESTRITAMENTE um JSON válido no seguinte formato:
+        {
+          "title": "AQUI VAI O TÍTULO COMPLETO DO TEMA",
+          "motivatingTexts": [
+             "Texto motivador 1 contendo dados ou contexto histórico...",
+             "Texto motivador 2 contendo uma reflexão social ou lei...",
+             "Texto motivador 3 (opcional) trazendo uma notícia recente ou impacto prático..."
+          ]
+        }
+    `;
+
+    const messages = [
+        { role: "system", content: "Banca oficial de redação do ENEM. Você responde APENAS com um objeto JSON válido, sem markdown ou formatação adicional." },
+        { role: "user", content: prompt }
+    ];
+
+    try {
+        // Aumentado o timeout para 25000ms para permitir que a IA gere textos mais densos
+        const response = await executeHybridAI(messages, true, 2, 25000);
+        return parseSafeJSON(response);
+    } catch (error) {
+        console.error("[AI:generateEssayTheme] Falha ao gerar tema de redação:", error);
+        throw error;
+    }
 };
 
 export const evaluateEssay = async (theme, essayText, performanceData = null) => {

@@ -216,9 +216,8 @@ const EssayView: React.FC<EssayViewProps> = ({ onBack, onSuccess }) => {
           </h1>
         </div>
         <div className="hidden sm:flex items-center gap-3">
-          {isTowerMode && <Badge color="purple" className="animate-pulse">PRÉDIO {towerLevel}</Badge>}
           <Badge color="blue">Padrão ENEM {new Date().getFullYear()}</Badge>
-          <Badge color="green">Tecnologia Gemini 1.5 Pro</Badge>
+          <Badge color="green">Tecnologia STUDR Pro</Badge>
         </div>
       </div>
 

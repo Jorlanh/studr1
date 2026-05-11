@@ -5,25 +5,25 @@ import { usePractice, PRACTICE_LOADING_STEPS } from '../contexts/PracticeContext
 import { useMock } from '../contexts/MockContext';
 import QuestionCard from './QuestionCard';
 import { Button, Badge, LoadingSpinner } from './UIComponents';
-import { apiRequest } from '../services/apiService'; // 🚨 IMPORTAÇÃO CRÍTICA ADICIONADA
+import { apiRequest } from '../services/apiService';
 
 // --- SISTEMA DE PROGRESSÃO DA TORRE (JORNADA TRI) ---
 export function getTowerQuestionCount(level: number): number {
-  if (level <= 5) return level + 4; // 1->5, 2->6, 3->7, 4->8, 5->9
-  if (level < 15) return 12;        // Prédios intermediários iniciais
+  if (level <= 5) return level + 4; 
+  if (level < 15) return 12;        
   if (level < 20) return 15;
   if (level < 25) return 18;
   if (level < 30) return 22;
-  if (level < 35) return 25;        // Nível avançado
+  if (level < 35) return 25;        
   if (level < 40) return 30;
   if (level < 45) return 35;
-  if (level < 50) return 40;        // Nível elite
+  if (level < 50) return 40;        
   if (level < 60) return 45;
-  if (level < 70) return 60;        // Nível lendário
+  if (level < 70) return 60;        
   if (level < 80) return 75;
   if (level < 90) return 90;
   if (level < 100) return 120;
-  return 180;                       // Prédio 100+ -> Simulado Completo
+  return 180;                       
 }
 
 export default function QuizScreen() {
@@ -33,7 +33,6 @@ export default function QuizScreen() {
   const practice = usePractice();
   const mock = useMock();
 
-  // Estado novo para o Loading ao clicar em Finalizar
   const [isFinalizing, setIsFinalizing] = useState(false);
 
   // --- ESTADOS DA JORNADA TORRE ---
@@ -55,32 +54,28 @@ export default function QuizScreen() {
     }
   }, [isMock]);
 
-  // Pull session state from whichever context is active
   const questions = isMock ? mock.questions : practice.questions;
   const userAnswers = isMock ? mock.userAnswers : practice.userAnswers;
   const currentQuestionIndex = isMock ? mock.currentQuestionIndex : practice.currentQuestionIndex;
   const loading = isMock ? mock.loading : practice.loading;
   const handleAnswerSelect = isMock ? mock.handleAnswerSelect : practice.handleAnswerSelect;
   
-  // Custom HandleNext para injetar o Loader de Finalização e Salvar a Torre
   const handleNext = async () => {
       const mockTarget = isMock ? mock.simuladoTargetCount : 0;
       const isMockFinished = isMock && (currentQuestionIndex + 1 >= mockTarget || mock.isTimeUp);
       const isTowerFinished = !isMock && isTowerMode && (currentQuestionIndex + 1 >= towerTargetCount);
 
       if (isMockFinished || isTowerFinished) {
-          setIsFinalizing(true); // Trava a tela
+          setIsFinalizing(true); 
           if (isMock) {
-              await mock.handleNext(); // Manda pro backend calcular o TRI do Simulado
+              await mock.handleNext(); 
           } else {
               try {
-                  // 🚨 INCREMENTO CRÍTICO: Registrar a vitória no Backend para liberar o próximo Andar
                   const floorStr = sessionStorage.getItem('studr_current_tower_floor');
                   
                   if (floorStr) {
                       const floor = JSON.parse(floorStr);
                       
-                      // Calcula uma pontuação simulada baseada em quantos acertos o usuário teve
                       let correctAnswers = 0;
                       questions.forEach(q => {
                           if (userAnswers[q.id] === q.correctIndex) correctAnswers++;
@@ -89,28 +84,26 @@ export default function QuizScreen() {
                       const performanceScore = Math.round((correctAnswers / towerTargetCount) * 1000) || 500;
                       const earnedStars = correctAnswers >= towerTargetCount * 0.8 ? 3 : correctAnswers >= towerTargetCount * 0.5 ? 2 : 1;
 
-                      // Envia para o banco de dados salvar o andar atual
-                      await apiRequest('/tower/floor', 'POST', { 
-                          building: floor.building || towerLevel,
-                          floorNumber: floor.floorNumber || 1,
-                          stars: earnedStars,
-                          score: performanceScore 
-                      }).catch(err => console.warn("Aviso: Falha isolada na API da Torre.", err));
+                      // 🚨 CORREÇÃO DEFINITIVA: Usa a rota '/tower/submit' configurada no seu backend (server/index.js)
+                      // e envia a estrutura de dados que o endpoint espera.
+                      await apiRequest('/tower/submit', 'POST', { 
+                          floorId: floor.id, 
+                          score: performanceScore,
+                          stars: earnedStars 
+                      });
                   }
                   
-                  // Limpa a sessão local e salva status parcial do quiz
-                  practice.finalizeWithPartial(); 
+                  // Respeita o bypass do roteamento
+                  practice.finalizeWithPartial(true); 
                   sessionStorage.removeItem('studr_exam_mode'); 
                   
-                  // Força o roteamento de volta para a subida da Torre
-                  setTimeout(() => {
-                    navigate(AppView.TOWER);
-                  }, 100);
+                  // Redirecionamento limpo para a Torre para refletir a progressão
+                  navigate(AppView.TOWER);
               } catch (err) {
                   console.error("Erro ao salvar progresso da torre:", err);
               }
           }
-          setIsFinalizing(false); // Libera a tela 
+          setIsFinalizing(false); 
       } else {
           isMock ? await mock.handleNext() : await practice.handleNext();
       }
@@ -118,21 +111,18 @@ export default function QuizScreen() {
 
   const handlePrevious = isMock ? mock.handlePrevious : practice.handlePrevious;
   
-  // Custom Cancel Action para não quebrar a navegação da Torre
   const cancelAction = () => {
     if (isTowerMode) {
       sessionStorage.removeItem('studr_exam_mode');
-      practice.cancelPractice();
-      setTimeout(() => navigate(AppView.TOWER), 50);
+      // Impede o sequestro de rota
+      practice.cancelPractice(true); 
+      navigate(AppView.TOWER);
     } else {
       isMock ? mock.cancelMock() : practice.cancelPractice();
     }
   };
 
-  // Practice-specific
   const loadingStep = practice.loadingStep;
-
-  // Mock-specific
   const timeRemaining = mock.timeRemaining;
   const isTimeUp = mock.isTimeUp;
   const simuladoTargetCount = mock.simuladoTargetCount;
@@ -145,7 +135,6 @@ export default function QuizScreen() {
       ? (currentQuestionIndex + 1 >= simuladoTargetCount || isTimeUp)
       : (isTowerMode && currentQuestionIndex + 1 >= towerTargetCount);
 
-  // Define visual label based on mode
   const effectiveTargetCount = isMock ? simuladoTargetCount : (isTowerMode ? towerTargetCount : '∞');
   const sessionHeaderTitle = isMock ? 'Simulado ENEM' : (isTowerMode ? `Batalha: Prédio ${towerLevel}` : 'Modo Prática Infinita');
 

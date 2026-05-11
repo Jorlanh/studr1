@@ -9,7 +9,6 @@ import { useGamification } from './GamificationContext';
 export type LoadingContext = 'IDLE' | 'GENERATING_PRACTICE' | 'GENERATING_EXAM' | 'FINISHING_EXAM';
 
 interface PracticeContextValue {
-  // Session state
   questions: Question[];
   userAnswers: Record<string, number>;
   currentQuestionIndex: number;
@@ -18,18 +17,17 @@ interface PracticeContextValue {
   isReviewSession: boolean;
   specificTopicInput: string;
   setSpecificTopicInput: (v: string) => void;
-  // Loading
   loading: boolean;
   loadingStep: number;
   loadingContext: LoadingContext;
-  // Actions
   startPractice: (area: AreaOfKnowledge, topic?: string, isReview?: boolean) => Promise<void>;
   handleAnswerSelect: (optionIndex: number) => void;
   handleNext: () => Promise<void>;
   handlePrevious: () => void;
-  cancelPractice: () => void;
+  // 🚨 CORREÇÃO: Adição do parâmetro opcional skipNavigation
+  cancelPractice: (skipNavigation?: boolean) => void;
   retryFetchNext: () => Promise<void>;
-  finalizeWithPartial: () => void;
+  finalizeWithPartial: (skipNavigation?: boolean) => void;
 }
 
 export const PRACTICE_LOADING_STEPS = [
@@ -40,7 +38,6 @@ export const PRACTICE_LOADING_STEPS = [
   'Quase pronto...',
 ];
 
-// Reutilizamos a lógica de cálculo estrita da Torre para limitar o Backend
 const getTowerQuestionCount = (level: number): number => {
   if (level <= 5) return level + 4; 
   if (level < 15) return 12;        
@@ -80,7 +77,6 @@ export function PracticeProvider({ children }: PropsWithChildren) {
   const isFetchingRef = useRef(false);
   const fetchPromiseRef = useRef<Promise<number> | null>(null);
 
-  // Reset loading when navigating home
   useEffect(() => {
     if (view === AppView.HOME) {
       setLoading(false);
@@ -90,7 +86,6 @@ export function PracticeProvider({ children }: PropsWithChildren) {
     }
   }, [view]);
 
-  // Background fetch when approaching buffer end
   useEffect(() => {
     if (view === AppView.PRACTICE) {
       loadMoreInBackground();
@@ -122,13 +117,9 @@ export function PracticeProvider({ children }: PropsWithChildren) {
   }, []);
 
   const loadMoreInBackground = useCallback((): Promise<number> => {
-    // If already fetching, return the in-progress promise so callers can await it
     if (isFetchingRef.current && fetchPromiseRef.current) return fetchPromiseRef.current;
     
-    // VERIFICAÇÃO DE BLOQUEIO DA TORRE INFINITA
     const isTowerMode = sessionStorage.getItem('studr_exam_mode') === 'TOWER';
-    
-    // 🚨 SOLUÇÃO ERRO 500: Nunca peça mais de 5 questões por vez para não crashar a IA
     let fetchTargetAmount = 5; 
 
     if (isTowerMode) {
@@ -137,7 +128,6 @@ export function PracticeProvider({ children }: PropsWithChildren) {
            const floor = JSON.parse(floorStr);
            const absoluteLimit = getTowerQuestionCount(floor.floorNumber || 1);
            
-           // Trava de Segurança: Se chegou no limite da Jornada, para de gerar.
            if (questions.length >= absoluteLimit) {
                return Promise.resolve(0); 
            }
@@ -146,7 +136,6 @@ export function PracticeProvider({ children }: PropsWithChildren) {
     }
 
     const remaining = questions.length - currentQuestionIndex;
-    // Puxa mais questões escondido quando faltarem apenas 2 pro buffer secar
     if (remaining > 2) return Promise.resolve(0); 
 
     isFetchingRef.current = true;
@@ -155,7 +144,6 @@ export function PracticeProvider({ children }: PropsWithChildren) {
         const currentSubjects = questions.map(q => q.subject).filter(Boolean) as string[];
         const excludeTopics = Array.from(new Set(currentSubjects)).slice(-10);
         
-        // Dispara a IA com a quantidade exata limitada
         const newBatch = await fetchBatchWithRetry(selectedArea, fetchTargetAmount, activeSessionTopic || undefined, excludeTopics, isReviewSession);
         
         setQuestions(prev => [...prev, ...newBatch]);
@@ -185,7 +173,6 @@ export function PracticeProvider({ children }: PropsWithChildren) {
     setUserAnswers({});
     setQuestions([]);
 
-    // Server-side plan check
     try {
       await apiRequest('/practice/start', 'POST');
     } catch (e: any) {
@@ -213,10 +200,7 @@ export function PracticeProvider({ children }: PropsWithChildren) {
     }, 3000);
 
     try {
-      // Verifica limite imediato no primeiro disparo
       const isTowerMode = sessionStorage.getItem('studr_exam_mode') === 'TOWER';
-      
-      // 🚨 SOLUÇÃO ERRO 500: Inicia a sessão APENAS com 5 questões de uma vez
       let initialFetchCount = 5; 
       
       if (isTowerMode) {
@@ -228,7 +212,6 @@ export function PracticeProvider({ children }: PropsWithChildren) {
          }
       }
 
-      // 'topic' aqui é a Matéria Específica repassada pelo AppRouter
       const initialBatch = await generateQuestionBatch(area, initialFetchCount, topic, [], isReview);
       setQuestions(initialBatch);
       setCurrentQuestionIndex(0);
@@ -251,7 +234,7 @@ export function PracticeProvider({ children }: PropsWithChildren) {
     if (!currentQ) return;
 
     const isFirstTimeAnswer = userAnswers[currentQ.id] === undefined;
-    if (!isFirstTimeAnswer) return; // Prevent double XP in practice mode
+    if (!isFirstTimeAnswer) return; 
 
     const isCorrect = optionIndex === currentQ.correctIndex;
     fireGamificationEvent(isReviewSession ? 'REVIEW_ERROR' : 'ANSWER_QUESTION', {
@@ -271,8 +254,6 @@ export function PracticeProvider({ children }: PropsWithChildren) {
       const added = await loadMoreInBackground();
       setLoading(false);
       if (added <= 0) {
-        // Se adicionou 0 e estamos na torre, significa que não tem mais pra adicionar.
-        // O QuizScreen intercepta o fim via handleNext dele, então isso serve apenas para previnir bugs.
         const isTowerMode = sessionStorage.getItem('studr_exam_mode') === 'TOWER';
         if (!isTowerMode) {
            openFetchError();
@@ -287,14 +268,17 @@ export function PracticeProvider({ children }: PropsWithChildren) {
     setCurrentQuestionIndex(prev => Math.max(0, prev - 1));
   }, []);
 
-  const cancelPractice = useCallback(() => {
+  // 🚨 CORREÇÃO: Respeitar o bypass do roteamento
+  const cancelPractice = useCallback((skipNavigation: boolean = false) => {
     isFetchingRef.current = false;
     setLoading(false);
     setLoadingStep(0);
     setLoadingContext('IDLE');
     setQuestions([]);
     setCurrentQuestionIndex(0);
-    navigate(AppView.HOME);
+    if (!skipNavigation) {
+        navigate(AppView.HOME);
+    }
   }, [navigate]);
 
   const retryFetchNext = useCallback(async () => {
@@ -310,9 +294,12 @@ export function PracticeProvider({ children }: PropsWithChildren) {
     }
   }, [loadMoreInBackground, closeFetchError, setFetchErrorRetrying]);
 
-  const finalizeWithPartial = useCallback(() => {
+  // 🚨 CORREÇÃO: Respeitar o bypass do roteamento
+  const finalizeWithPartial = useCallback((skipNavigation: boolean = false) => {
     closeFetchError();
-    navigate(AppView.HOME);
+    if (!skipNavigation) {
+        navigate(AppView.HOME);
+    }
   }, [closeFetchError, navigate]);
 
   return (
