@@ -28,7 +28,7 @@ export enum AreaOfKnowledge {
   NATUREZA = 'Ciências da Natureza',
   HUMANAS = 'Ciências Humanas',
   LINGUAGENS = 'Linguagens e Códigos',
-  EXATAS = 'Exatas e Suas Tecnologias',
+  EXATAS = 'Matemática e Suas Tecnologias',
   MIXED = 'Todas as Áreas'
 }
 
