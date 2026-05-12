@@ -981,16 +981,20 @@ app.get('/api/tower/state', authenticateToken, async (req, res) => {
     }
 });
 
-// 🚨 ROTA DA TORRE CORRIGIDA: AGORA USA 'hits'
+// 🚨 ROTA DA TORRE CORRIGIDA: SUPORTA HITS (QUIZ) E SCORE (REDAÇÃO BOSS)
 app.post('/api/tower/submit', authenticateToken, async (req, res) => {
     try {
-        const { floorId, hits } = req.body;
+        const { floorId, hits, score } = req.body;
         
-        if (!floorId || typeof hits !== 'number') {
-            return res.status(400).json({ error: 'Dados inválidos. floorId e hits são obrigatórios.' });
+        if (!floorId) {
+            return res.status(400).json({ error: 'floorId é obrigatório.' });
         }
 
-        const result = await submitFloorResult(req.user.userId, floorId, hits);
+        // O Quiz passa "hits" (acertos), a Redação passa "score" direto.
+        const isEssay = typeof score === 'number';
+        const finalHits = isEssay ? null : (hits || 0);
+
+        const result = await submitFloorResult(req.user.userId, floorId, finalHits, score);
         res.json(result); 
     } catch (err) {
         console.error('[tower/submit] erro:', err.message);

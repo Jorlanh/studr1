@@ -1,4 +1,3 @@
-
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 
 const getHeaders = () => {
@@ -10,7 +9,12 @@ const getHeaders = () => {
 };
 
 export const apiRequest = async (endpoint: string, method: string = 'GET', body?: any) => {
-    const response = await fetch(`${API_URL}${endpoint}`, {
+    // Remove qualquer prefixo duplo '/api'
+    const cleanEndpoint = endpoint.replace(/^\/?api/, '').replace(/^\/+/, '/');
+    const baseUrlClean = API_URL.replace(/\/+$/, '');
+    const url = `${baseUrlClean}${cleanEndpoint.startsWith('/') ? cleanEndpoint : `/${cleanEndpoint}`}`;
+
+    const response = await fetch(url, {
         method,
         headers: getHeaders(),
         body: body ? JSON.stringify(body) : undefined
@@ -19,11 +23,10 @@ export const apiRequest = async (endpoint: string, method: string = 'GET', body?
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
 
-        // Session expired or invalidated: dispatch event so App.tsx can show a graceful modal
         if (response.status === 401) {
-            console.warn('[API] 401 - Sessão expirada:', errorData.error, '| endpoint:', endpoint);
+            console.warn('[API] 401 - Sessão expirada:', errorData.error, '| endpoint:', url);
             window.dispatchEvent(new CustomEvent('studr:session-expired', {
-                detail: { reason: errorData.error || 'Sessão expirada', endpoint }
+                detail: { reason: errorData.error || 'Sessão expirada', endpoint: url }
             }));
             const err = new Error('SESSION_EXPIRED');
             (err as any).status = 401;

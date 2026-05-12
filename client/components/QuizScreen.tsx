@@ -7,7 +7,6 @@ import QuestionCard from './QuestionCard';
 import { Button, Badge, LoadingSpinner } from './UIComponents';
 import { apiRequest } from '../services/apiService';
 
-// --- SISTEMA DE PROGRESSÃO DA TORRE (JORNADA TRI) ---
 export function getTowerQuestionCount(level: number): number {
   if (level <= 5) return level + 4; 
   if (level < 15) return 12;        
@@ -34,8 +33,6 @@ export default function QuizScreen() {
   const mock = useMock();
 
   const [isFinalizing, setIsFinalizing] = useState(false);
-
-  // --- ESTADOS DA JORNADA TORRE ---
   const [isTowerMode, setIsTowerMode] = useState(false);
   const [towerLevel, setTowerLevel] = useState(1);
   const [towerTargetCount, setTowerTargetCount] = useState(5);
@@ -75,23 +72,19 @@ export default function QuizScreen() {
                   
                   if (floorStr) {
                       const floor = JSON.parse(floorStr);
-                      
-                      // Conta exatamente quantas o aluno acertou (os "hits")
                       let correctAnswers = 0;
                       questions.forEach(q => {
                           if (userAnswers[q.id] === q.correctIndex) correctAnswers++;
                       });
                       
-                      // 🚨 CORREÇÃO: Envia 'hits' em vez de 'score', como o novo backend exige!
                       await apiRequest('/tower/submit', 'POST', { 
                           floorId: floor.id, 
-                          hits: correctAnswers // Aqui mandamos os acertos reais
+                          hits: correctAnswers
                       });
                   }
                   
                   practice.finalizeWithPartial(true); 
                   sessionStorage.removeItem('studr_exam_mode'); 
-                  
                   navigate(AppView.TOWER);
               } catch (err) {
                   console.error("Erro ao salvar progresso da torre:", err);
@@ -273,7 +266,7 @@ export default function QuizScreen() {
               </div>
             ) : (
               isSimuladoOrTowerFinished 
-                ? (isTowerMode ? 'Dominar Prédio 🏆' : 'Finalizar Simulado') 
+                ? (isTowerMode ? 'Avançar Andar 🏆' : 'Finalizar Simulado') 
                 : 'Próxima Questão →'
             )}
           </Button>
