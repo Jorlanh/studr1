@@ -124,7 +124,7 @@ export function MockProvider({ children }: PropsWithChildren) {
           if (nextIndex < 45) areaToFetch = AreaOfKnowledge.HUMANAS;
           else if (nextIndex < 90) areaToFetch = AreaOfKnowledge.LINGUAGENS;
           else if (nextIndex < 135) areaToFetch = AreaOfKnowledge.NATUREZA;
-          else areaToFetch = AreaOfKnowledge.MATEMATICA;
+          else areaToFetch = AreaOfKnowledge.EXATAS;
         }
 
         const newBatch = await fetchBatchWithRetry(areaToFetch, batchSize, currentExcludes, examId ?? undefined);

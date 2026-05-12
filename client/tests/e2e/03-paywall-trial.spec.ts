@@ -34,7 +34,7 @@ test.describe('Paywall — Trial', () => {
     const LIMIT = 10;
 
     for (let i = 0; i < LIMIT; i++) {
-      const subjectBtn = page.getByRole('button').filter({ hasText: /matemática/i }).first();
+      const subjectBtn = page.getByRole('button').filter({ hasText: /exatas/i }).first();
       await subjectBtn.click();
 
       // Either a question appears or the paywall already fired
@@ -59,7 +59,7 @@ test.describe('Paywall — Trial', () => {
     }
 
     // After exhausting limit, next attempt must show paywall
-    const subjectBtn = page.getByRole('button').filter({ hasText: /matemática/i }).first();
+    const subjectBtn = page.getByRole('button').filter({ hasText: /exatas/i }).first();
     if (await subjectBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
       await subjectBtn.click();
       await expect(

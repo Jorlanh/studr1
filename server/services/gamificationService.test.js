@@ -73,7 +73,7 @@ describe('emitEvent — XP por tipo de questão', () => {
     db.userXp.upsert.mockResolvedValue(makeXp());
 
     const result = await emitEvent('u1', 'ANSWER_QUESTION', {
-      subject: 'Matemática',
+      subject: 'Exatas',
       difficulty: 'EASY',
       correct: true,
     });
@@ -84,7 +84,7 @@ describe('emitEvent — XP por tipo de questão', () => {
 
   it('acertar MEDIUM concede 2 + 5 = 7 XP', async () => {
     const result = await emitEvent('u1', 'ANSWER_QUESTION', {
-      subject: 'Matemática',
+      subject: 'Exatas',
       difficulty: 'MEDIUM',
       correct: true,
     });
@@ -93,7 +93,7 @@ describe('emitEvent — XP por tipo de questão', () => {
 
   it('acertar HARD concede 2 + 8 = 10 XP', async () => {
     const result = await emitEvent('u1', 'ANSWER_QUESTION', {
-      subject: 'Matemática',
+      subject: 'Exatas',
       difficulty: 'HARD',
       correct: true,
     });
@@ -102,7 +102,7 @@ describe('emitEvent — XP por tipo de questão', () => {
 
   it('errar questão concede só ANSWER_ANY = 2 XP', async () => {
     const result = await emitEvent('u1', 'ANSWER_QUESTION', {
-      subject: 'Matemática',
+      subject: 'Exatas',
       difficulty: 'MEDIUM',
       correct: false,
     });
@@ -175,10 +175,10 @@ describe('emitEvent — level up', () => {
 
 describe('updateSubjectProgress', () => {
   it('chama prisma.userProgress.upsert com increment correto em acerto', async () => {
-    await updateSubjectProgress('u1', 'Matemática', true);
+    await updateSubjectProgress('u1', 'Exatas', true);
     expect(db.userProgress.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { userId_subject: { userId: 'u1', subject: 'Matemática' } },
+        where: { userId_subject: { userId: 'u1', subject: 'Exatas' } },
         update: expect.objectContaining({
           questionsAnswered: { increment: 1 },
           questionsCorrect: { increment: 1 },
@@ -188,7 +188,7 @@ describe('updateSubjectProgress', () => {
   });
 
   it('questionsCorrect não incrementa em erro', async () => {
-    await updateSubjectProgress('u1', 'Matemática', false);
+    await updateSubjectProgress('u1', 'Exatas', false);
     expect(db.userProgress.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         update: expect.objectContaining({
@@ -225,15 +225,15 @@ describe('checkBadges', () => {
     expect(awarded.map(b => b.key)).toContain('essay.first');
   });
 
-  it('badge subject.matematica.bronze concedida com 10 acertos em Matemática', async () => {
+  it('badge subject.exatas.bronze concedida com 10 acertos em Exatas', async () => {
     db.userProgress.findUnique.mockResolvedValue({
       questionsCorrect: 10,
     });
     const awarded = await checkBadges('u1', 'ANSWER_QUESTION', {
-      subject: 'Matemática',
+      subject: 'Exatas',
       correct: true,
     });
-    expect(awarded.map(b => b.key)).toContain('subject.matematica.bronze');
+    expect(awarded.map(b => b.key)).toContain('subject.exatas.bronze');
   });
 
   it('badge habit.streak_7 concedida com streak >= 7', async () => {

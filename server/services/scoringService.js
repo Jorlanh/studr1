@@ -71,7 +71,7 @@ export async function calculateScore(responses) {
     HUMANAS: [],
     LINGUAGENS: [],
     NATUREZA: [],
-    MATEMATICA: []
+    EXATAS: []
   };
 
   responses.forEach(r => {
@@ -80,7 +80,7 @@ export async function calculateScore(responses) {
       'Ciências Humanas': 'HUMANAS',
       'Linguagens': 'LINGUAGENS',
       'Ciências da Natureza': 'NATUREZA',
-      'Matemática': 'MATEMATICA'
+      'Exatas': 'EXATAS'
     };
     const mappedArea = areaMap[r.area] || r.area;
     

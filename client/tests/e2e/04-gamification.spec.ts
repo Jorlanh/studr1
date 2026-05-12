@@ -54,7 +54,7 @@ test.describe('Gamificação', () => {
     await loginAs(page, 'premium');
 
     // Start a practice
-    const subjectBtn = page.getByRole('button').filter({ hasText: /matemática/i }).first();
+    const subjectBtn = page.getByRole('button').filter({ hasText: /exatas/i }).first();
     await subjectBtn.click();
 
     // Wait for question

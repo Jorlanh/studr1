@@ -28,7 +28,7 @@ test.describe('Login e Home', () => {
     await loginAs(page, 'premium');
 
     // Start a practice session (click any subject area button)
-    const subjectBtn = page.getByRole('button').filter({ hasText: /matemática/i }).first();
+    const subjectBtn = page.getByRole('button').filter({ hasText: /exatas/i }).first();
     await subjectBtn.click();
 
     // Question loads
@@ -48,7 +48,7 @@ test.describe('Login e Home', () => {
     await loginAs(page, 'premium');
 
     // ENEM knowledge areas should be listed
-    await expect(page.getByText(/matemática/i).first()).toBeVisible();
+    await expect(page.getByText(/exatas/i).first()).toBeVisible();
     await expect(page.getByText(/linguagens/i).first()).toBeVisible();
   });
 });

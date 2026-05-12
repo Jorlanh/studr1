@@ -2,7 +2,7 @@
 import { AreaOfKnowledge } from './types';
 
 export const SUBJECT_AREAS = [
-  { id: AreaOfKnowledge.MATEMATICA, name: 'Matemática', icon: '📐' },
+  { id: AreaOfKnowledge.EXATAS, name: 'Exatas', icon: '📐' },
   { id: AreaOfKnowledge.NATUREZA, name: 'Natureza', icon: '🧬' },
   { id: AreaOfKnowledge.HUMANAS, name: 'Humanas', icon: '🏛️' },
   { id: AreaOfKnowledge.LINGUAGENS, name: 'Linguagens', icon: '📖' },
@@ -18,14 +18,14 @@ export const GAMIFICATION_SUBJECTS = {
   [AreaOfKnowledge.NATUREZA]: [
     "Química", "Física", "Biologia"
   ],
-  [AreaOfKnowledge.MATEMATICA]: [
-    "Matemática"
+  [AreaOfKnowledge.EXATAS]: [
+    "Exatas"
   ]
 };
 
 // Flattened list for the generator buttons
 export const SPECIFIC_SUBJECTS = [
-  { name: 'Matemática', area: AreaOfKnowledge.MATEMATICA },
+  { name: 'Exatas', area: AreaOfKnowledge.EXATAS },
   { name: 'Física', area: AreaOfKnowledge.NATUREZA },
   { name: 'Química', area: AreaOfKnowledge.NATUREZA },
   { name: 'Biologia', area: AreaOfKnowledge.NATUREZA },
@@ -56,7 +56,7 @@ export const SUBJECT_TOPICS: Record<string, string[]> = {
   "Física": ["Mecânica", "Termologia", "Óptica", "Eletricidade", "Ondulatória"],
   "Química": ["Química Geral", "Físico-Química", "Química Orgânica", "Meio Ambiente"],
   "Biologia": ["Citologia", "Genética", "Evolução", "Ecologia", "Fisiologia Humana"],
-  "Matemática": ["Álgebra", "Geometria", "Tratamento de Informação", "Razão e Proporção", "Funções"]
+  "Exatas": ["Álgebra", "Geometria", "Tratamento de Informação", "Razão e Proporção", "Funções"]
 };
 
 export const STUDY_GUIDE_SUBJECTS = Object.keys(SUBJECT_TOPICS);

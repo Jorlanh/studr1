@@ -535,19 +535,18 @@ export default function HomeView() {
               </p>
             </div>
           </div>
-          
-          {/* 🔥 BOTÃO DE REGRAS NO CANTO SUPERIOR DIREITO */}
-          <button 
-            onClick={(e) => {
-                e.stopPropagation(); // Evita clicar no card se estiver bloqueado
-                setIsRulesModalOpen(true);
-            }}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-200 dark:hover:bg-cyan-800/50 transition-colors shadow-sm"
-            title="Ver Regras da Jornada"
-          >
-            ❓
-          </button>
         </div>
+        
+        {/* 🔥 NOVO BOTÃO DE REGRAS - CLARO E EXPLÍCITO */}
+        <button 
+          onClick={(e) => {
+              e.stopPropagation(); // Evita ativar o BentoCard bloqueado
+              setIsRulesModalOpen(true);
+          }}
+          className="text-xs font-black text-cyan-600 hover:text-cyan-500 flex items-center gap-2 mb-4 mr-auto border border-cyan-500/30 bg-cyan-50 dark:bg-cyan-950/30 px-4 py-2 rounded-xl transition-all hover:-translate-y-0.5"
+        >
+          📜 LER REGRAS DA JORNADA
+        </button>
 
         <Button
           onClick={() => navigate(AppView.TOWER)}
@@ -565,7 +564,7 @@ export default function HomeView() {
         </Button>
       </BentoCard>
 
-      {/* RENDERIZAÇÃO DO COMPONENTE DO MODAL AQUI */}
+      {/* RENDERIZAÇÃO DO COMPONENTE DO MODAL */}
       <TowerRulesModal 
         isOpen={isRulesModalOpen} 
         onClose={() => setIsRulesModalOpen(false)} 

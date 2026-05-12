@@ -1079,7 +1079,7 @@ app.post('/api/ai/generate-questions', authenticateToken, async (req, res) => {
                 correctIndex: 0,
                 subject: specificTopic || area,
                 difficulty: 'MEDIUM',
-                area: area || 'MATEMATICA',
+                area: area || 'EXATAS',
                 explanation: '[E2E] Explicação de teste — alternativa A está correta.',
             }));
             return res.json(stub);

@@ -121,7 +121,7 @@ const ResultsView: React.FC<ResultsViewProps> = ({ questions, userAnswers, final
     "NATUREZA": "Natureza",
     "HUMANAS": "Humanas",
     "LINGUAGENS": "Linguagens",
-    "MATEMATICA": "Matemática"
+    "EXATAS": "Exatas"
   };
 
   // 2. Lógica de extração com normalização de texto (Busca por aproximação)
@@ -129,7 +129,7 @@ const ResultsView: React.FC<ResultsViewProps> = ({ questions, userAnswers, final
     { id: "NATUREZA", search: "natureza" },
     { id: "HUMANAS", search: "humana" },
     { id: "LINGUAGENS", search: "linguagem" },
-    { id: "MATEMATICA", search: "matemát" }
+    { id: "EXATAS", search: "exatas" }
   ].map(item => {
     // Procura na questão ignorando acentos e maiúsculas
     const qs = questions.filter(q => {

@@ -474,7 +474,7 @@ export const generateStudyMap = async (subject, topic) => {
       "roadmap": [
         {
           "step": 1,
-          "title": "Nome do Módulo (ex: Matemática Básica)",
+          "title": "Nome do Módulo (ex: Exatas Básica)",
           "description": "Breve explicação do porquê começar por aqui",
           "importance": "ALTA",
           "subtopics": ["Subtópico 1", "Subtópico 2", "Subtópico 3"]
