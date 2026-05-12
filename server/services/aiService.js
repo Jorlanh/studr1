@@ -137,14 +137,17 @@ const callGroq = async (messages, isJson) => {
     return data.choices[0].message.content;
 };
 
-// --- ROTERIZADOR DE TRÁFEGO COM SUPORTE A FATURAMENTO (BILLING) ---
-const executeHybridAI = async (messages, isJson = true, retries = 1, timeoutMs = 28000) => {
+// --- ROTERIZADOR DE TRÁFEGO COM SUPORTE A FATURAMENTO (BILLING) E FORCE PROVIDER ---
+// 🚨 INCREMENTO: Adicionado 'forceProvider' e timeoutMs padrão aumentado para lidar com o Railway
+const executeHybridAI = async (messages, isJson = true, retries = 2, timeoutMs = 60000, forceProvider = null) => {
     const now = Date.now();
-    let selectedProvider = primaryProvider;
+    let selectedProvider = forceProvider || primaryProvider;
 
-    // Lógica de alternância rápida
-    if (selectedProvider === 'gemini' && now < geminiCooldownUntil) selectedProvider = 'groq';
-    if (selectedProvider === 'groq' && now < groqCooldownUntil) selectedProvider = 'gemini';
+    // Lógica de alternância rápida (só ocorre se não houver um provider forçado)
+    if (!forceProvider) {
+        if (selectedProvider === 'gemini' && now < geminiCooldownUntil) selectedProvider = 'groq';
+        if (selectedProvider === 'groq' && now < groqCooldownUntil) selectedProvider = 'gemini';
+    }
 
     try {
         const startTime = Date.now();
@@ -174,13 +177,13 @@ const executeHybridAI = async (messages, isJson = true, retries = 1, timeoutMs =
 
             if (retries > 0) {
                 await delay(500); // Pequena pausa apenas para sincronia
-                return executeHybridAI(messages, isJson, retries - 1, timeoutMs);
+                return executeHybridAI(messages, isJson, retries - 1, timeoutMs, selectedProvider === 'gemini' ? 'groq' : 'gemini');
             }
         } 
         
         if (error.name === 'APITimeoutError') {
             console.warn(`[AI:Hybrid] ⚠️ Timeout no ${selectedProvider.toUpperCase()}. Alternando...`);
-            if (retries > 0) return executeHybridAI(messages, isJson, retries - 1, timeoutMs);
+            if (retries > 0) return executeHybridAI(messages, isJson, retries - 1, timeoutMs, selectedProvider === 'gemini' ? 'groq' : 'gemini');
         }
 
         console.error(`[AI:Hybrid] ✗ Erro crítico no ${selectedProvider.toUpperCase()}:`, error.message);
@@ -258,7 +261,7 @@ Retorne SOMENTE um JSON com a chave "questions" contendo um array de exatos ${co
 
     while (attempts < maxAttempts) {
         try {
-            const rawResponse = await executeHybridAI(messages, true, 1, 30000);
+            const rawResponse = await executeHybridAI(messages, true, 1, 45000); // 🚨 Timeout estendido para 45s
             const content = parseSafeJSON(rawResponse);
             let parsedQuestions = content.questions || (Array.isArray(content) ? content : [content]);
             
@@ -343,7 +346,7 @@ export const generateStudyPlan = async (results) => {
     const prompt = `Erros: ${incorrects.join(', ')}. Acertos: ${correctSubjects.join(', ')}. 
     Forneça 4 recomendações de estudo. JSON array: [{ "topic": "", "area": "", "priority": "", "reason": "" }]`;
     const messages = [{ role: "system", content: "Orientador Pedagógico ENEM. Retorne APENAS um array JSON." }, { role: "user", content: prompt }];
-    const content = parseSafeJSON(await executeHybridAI(messages, true, 1, 10000));
+    const content = parseSafeJSON(await executeHybridAI(messages, true, 1, 15000)); // 🚨 Timeout estendido
     return Array.isArray(content) ? content : (content.recommendations || [content]);
 };
 
@@ -379,8 +382,8 @@ export const generateEssayTheme = async () => {
     ];
 
     try {
-        // Aumentado o timeout para 25000ms para permitir que a IA gere textos mais densos
-        const response = await executeHybridAI(messages, true, 2, 25000);
+        // Aumentado o timeout para 45000ms para permitir que a IA gere textos mais densos
+        const response = await executeHybridAI(messages, true, 2, 45000);
         return parseSafeJSON(response);
     } catch (error) {
         console.error("[AI:generateEssayTheme] Falha ao gerar tema de redação:", error);
@@ -400,55 +403,55 @@ export const evaluateEssay = async (theme, essayText, performanceData = null) =>
       No campo "generalFeedback", você DEVE agir como um Treinador de Alta Performance do ENEM. Analise como o aluno geriu o tempo e a fadiga. Se o tempo estourou ou as pausas foram altas, seja implacável alertando sobre resistência mental e fadiga. Se terminou no tempo com coesão, elogie o preparo tático sob pressão extrema da Torre.
     ` : "";
 
-    // PROMPT BLINDADO E RIGOROSO DO ENEM
-    const prompt = `
-      Você é um Corretor Oficial do ENEM, rigoroso e técnico. Corrija a redação abaixo sobre o tema: "${theme}".
+    // PROMPT BLINDADO E RIGOROSO DO ENEM
+    const prompt = `
+      Você é um Corretor Oficial do ENEM, rigoroso e técnico. Corrija a redação abaixo sobre o tema: "${theme}".
       ${performanceContext}
-      
-      REGRAS ABSOLUTAS (OBRIGATÓRIO):
-      1. A nota de cada competência SÓ PODE SER: 0, 40, 80, 120, 160 ou 200. É PROIBIDO DAR NOTAS QUEBRADAS COMO 85, 90, 72.
-      2. O "totalScore" DEVE SER a soma exata das 5 competências.
-      3. VOCÊ NÃO PODE INVENTAR NOMES DE COMPETÊNCIAS. USE EXATAMENTE ESTAS 5:
-         ID 1: "Domínio da Norma Padrão"
-         ID 2: "Compreensão e Repertório"
-         ID 3: "Organização e Argumentação"
-         ID 4: "Coesão e Conectivos"
-         ID 5: "Proposta de Intervenção"
+      
+      REGRAS ABSOLUTAS (OBRIGATÓRIO):
+      1. A nota de cada competência SÓ PODE SER: 0, 40, 80, 120, 160 ou 200. É PROIBIDO DAR NOTAS QUEBRADAS COMO 85, 90, 72.
+      2. O "totalScore" DEVE SER a soma exata das 5 competências.
+      3. VOCÊ NÃO PODE INVENTAR NOMES DE COMPETÊNCIAS. USE EXATAMENTE ESTAS 5:
+         ID 1: "Domínio da Norma Padrão"
+         ID 2: "Compreensão e Repertório"
+         ID 3: "Organização e Argumentação"
+         ID 4: "Coesão e Conectivos"
+         ID 5: "Proposta de Intervenção"
 
-      REDAÇÃO DO ALUNO:
-      """
-      ${essayText}
-      """
+      REDAÇÃO DO ALUNO:
+      """
+      ${essayText}
+      """
 
-      Retorne APENAS um objeto JSON válido (sem marcadores markdown). Formato:
-      {
-        "totalScore": 800,
-        "generalFeedback": "Parágrafo resumindo a performance geral do aluno e nível do texto.",
-        "strengths": ["Ponto forte 1", "Ponto forte 2"],
-        "weaknesses": ["Ponto de melhoria 1", "Ponto de melhoria 2"],
-        "competencies": [
-          { "id": 1, "name": "Domínio da Norma Padrão", "score": 160, "feedback": "Análise gramatical detalhada..." },
-          { "id": 2, "name": "Compreensão e Repertório", "score": 160, "feedback": "Análise do repertório..." },
-          { "id": 3, "name": "Organização e Argumentação", "score": 160, "feedback": "Análise do projeto de texto..." },
-          { "id": 4, "name": "Coesão e Conectivos", "score": 160, "feedback": "Análise dos elementos coesivos..." },
-          { "id": 5, "name": "Proposta de Intervenção", "score": 160, "feedback": "Análise dos 5 elementos da PI..." }
-        ]
-      }
-    `;
+      Retorne APENAS um objeto JSON válido (sem marcadores markdown). Formato:
+      {
+        "totalScore": 800,
+        "generalFeedback": "Parágrafo resumindo a performance geral do aluno e nível do texto.",
+        "strengths": ["Ponto forte 1", "Ponto forte 2"],
+        "weaknesses": ["Ponto de melhoria 1", "Ponto de melhoria 2"],
+        "competencies": [
+          { "id": 1, "name": "Domínio da Norma Padrão", "score": 160, "feedback": "Análise gramatical detalhada..." },
+          { "id": 2, "name": "Compreensão e Repertório", "score": 160, "feedback": "Análise do repertório..." },
+          { "id": 3, "name": "Organização e Argumentação", "score": 160, "feedback": "Análise do projeto de texto..." },
+          { "id": 4, "name": "Coesão e Conectivos", "score": 160, "feedback": "Análise dos elementos coesivos..." },
+          { "id": 5, "name": "Proposta de Intervenção", "score": 160, "feedback": "Análise dos 5 elementos da PI..." }
+        ]
+      }
+    `;
 
-    const messages = [
-        { role: "system", content: "Corretor oficial do ENEM. Siga estritamente as regras de pontuação e matriz de referência do INEP. Retorne APENAS JSON." },
-        { role: "user", content: prompt }
-    ];
+    const messages = [
+        { role: "system", content: "Corretor oficial do ENEM. Siga estritamente as regras de pontuação e matriz de referência do INEP. Retorne APENAS JSON." },
+        { role: "user", content: prompt }
+    ];
 
-    const content = parseSafeJSON(await executeHybridAI(messages, true, 1, 30000));
-    
-    // Trava final de segurança para garantir a soma correta
-    if (content.competencies && Array.isArray(content.competencies)) {
-      content.totalScore = content.competencies.reduce((acc, curr) => acc + (curr.score || 0), 0);
-    }
-    
-    return content;
+    const content = parseSafeJSON(await executeHybridAI(messages, true, 1, 60000)); // 🚨 Timeout estendido para 60s
+    
+    // Trava final de segurança para garantir a soma correta
+    if (content.competencies && Array.isArray(content.competencies)) {
+      content.totalScore = content.competencies.reduce((acc, curr) => acc + (curr.score || 0), 0);
+    }
+    
+    return content;
 };
 
 export const getGrade1000Example = async (theme) => {
@@ -484,14 +487,18 @@ export const generateStudyMap = async (subject, topic) => {
         { role: "user", content: prompt }
     ];
     
-    return parseSafeJSON(await executeHybridAI(messages, true, 1, 20000));
+    return parseSafeJSON(await executeHybridAI(messages, true, 1, 30000)); // 🚨 Timeout estendido para 30s
 };
 
+// 🚨 SOLUÇÃO PARA O ERRO DO TUTOR IA: 
+// 1. Forçado modelo Groq (Llama) por ser ultra-rápido.
+// 2. Tempo de timeout estendido enormemente para evitar corte prematuro.
 export const getChatResponse = async (history, newMessage) => {
     const messages = [
-        { role: "system", content: "Tutor Especialista ENEM. Didático, direto, use markdown para matemática/física." },
+        { role: "system", content: "Você é um Tutor Especialista no ENEM e preparador para provas no Brasil. Você é didático, empático e mestre na pedagogia. Responda em português brasileiro. Use formatação Markdown (negritos, listas) para deixar a resposta bonita. SEMPRE responda diretamente o que o aluno pediu, com foco em aprovação no exame." },
         ...history.map(msg => ({ role: msg.role === 'user' ? 'user' : 'assistant', content: msg.text })),
         { role: "user", content: newMessage }
     ];
-    return await executeHybridAI(messages, false, 1, 15000);
+    // Usa 'groq' como forceProvider e 60000ms de timeout para garantir que responde sempre
+    return await executeHybridAI(messages, false, 2, 60000, 'groq');
 };

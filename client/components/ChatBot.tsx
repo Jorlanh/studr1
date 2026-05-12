@@ -67,7 +67,8 @@ const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onToggle }) => {
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
         role: 'model',
-        text: "Desculpe, tive um problema de conexão. Tente novamente."
+        // 🚨 INCREMENTO AQUI: Mensagem de erro aprimorada. Se a conexão cair de verdade, a IA não cospe um erro seco, mas explica o que se passou.
+        text: "Parece que a sua ligação oscilou ou o servidor está sobrecarregado. Por favor, tente enviar a pergunta novamente em alguns segundos."
       }]);
     } finally {
       setLoading(false);

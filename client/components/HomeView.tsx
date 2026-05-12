@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { AreaOfKnowledge, AppView } from '../types';
 import { useUser } from '../contexts/UserContext';
 import { useGamification } from '../contexts/GamificationContext';
@@ -9,6 +9,7 @@ import { useUI } from '../contexts/UIContext';
 import { Button, Badge } from './UIComponents';
 import Logo from './Logo';
 import { SUBJECT_AREAS, SPECIFIC_SUBJECTS } from '../constants';
+import TowerRulesModal from './TowerRulesModal';
 
 const BentoCard = ({
   children,
@@ -108,11 +109,14 @@ export default function HomeView() {
 
   const { startSimulado, loading: mockLoading } = useMock();
 
-  const { navigate, view } = useNavigation(); // INCREMENTO: Puxando o estado do view para renderizar a torre
+  const { navigate, view } = useNavigation(); 
   const { openPricing, setChatOpen } = useUI();
 
   const isPremium = user?.isPremium;
   const isMockOnly = user?.subscriptionStatus === 'MOCK_ONLY';
+
+  // Controle de estado para o Modal das Regras da Torre
+  const [isRulesModalOpen, setIsRulesModalOpen] = useState(false);
 
   const hasTakenMockThisMonth = () => {
     if (!user?.id) return false;
@@ -132,7 +136,6 @@ export default function HomeView() {
     );
   };
 
-  // INCREMENTO: Função que repassa a quantidade de questões do Prédio para o MockContext
   const handleTowerBattleStart = (floor: any) => {
     sessionStorage.setItem('studr_exam_mode', 'TOWER');
     sessionStorage.setItem('studr_current_tower_floor', JSON.stringify(floor));
@@ -340,7 +343,6 @@ export default function HomeView() {
 
           <div className="flex flex-col items-end gap-2">
             <Badge color="blue">ENEM</Badge>
-            {/* BOTÃO DE HISTÓRICO ADICIONADO AQUI */}
             <button 
               onClick={() => navigate(AppView.EXAM_HISTORY)}
               className="text-[10px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-600 transition-colors"
@@ -400,7 +402,6 @@ export default function HomeView() {
               : '🏆 Iniciar Simulado Completo'}
           </Button>
           
-          {/* OPÇÃO ALTERNATIVA: Botão de histórico ao lado do principal em telas maiores */}
           <Button
             variant="outline"
             onClick={() => navigate(AppView.EXAM_HISTORY)}
@@ -518,20 +519,34 @@ export default function HomeView() {
         locked={!(isPremium || isTrial)}
         onLockedClick={openPricing}
       >
-        <div className="flex items-center gap-4 mb-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-2xl shadow-lg">
-            🗼
-          </div>
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-2xl shadow-lg">
+              🗼
+            </div>
 
-          <div>
-            <h2 className="text-2xl font-black text-slate-900 dark:text-white">
-              Jornada TRI
-            </h2>
+            <div>
+              <h2 className="text-2xl font-black text-slate-900 dark:text-white">
+                Jornada TRI
+              </h2>
 
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Suba níveis e enfrente desafios.
-            </p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Suba níveis e enfrente desafios.
+              </p>
+            </div>
           </div>
+          
+          {/* 🔥 BOTÃO DE REGRAS NO CANTO SUPERIOR DIREITO */}
+          <button 
+            onClick={(e) => {
+                e.stopPropagation(); // Evita clicar no card se estiver bloqueado
+                setIsRulesModalOpen(true);
+            }}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-200 dark:hover:bg-cyan-800/50 transition-colors shadow-sm"
+            title="Ver Regras da Jornada"
+          >
+            ❓
+          </button>
         </div>
 
         <Button
@@ -549,6 +564,12 @@ export default function HomeView() {
           ⚔️ Iniciar Jornada
         </Button>
       </BentoCard>
+
+      {/* RENDERIZAÇÃO DO COMPONENTE DO MODAL AQUI */}
+      <TowerRulesModal 
+        isOpen={isRulesModalOpen} 
+        onClose={() => setIsRulesModalOpen(false)} 
+      />
 
       {/* ========================================= */}
       {/* 6 - NÍVEL */}
