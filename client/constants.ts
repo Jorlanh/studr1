@@ -25,7 +25,7 @@ export const GAMIFICATION_SUBJECTS = {
 
 // Flattened list for the generator buttons
 export const SPECIFIC_SUBJECTS = [
-  { name: 'Exatas', area: AreaOfKnowledge.EXATAS },
+  { name: 'Matemática', area: AreaOfKnowledge.EXATAS },
   { name: 'Física', area: AreaOfKnowledge.NATUREZA },
   { name: 'Química', area: AreaOfKnowledge.NATUREZA },
   { name: 'Biologia', area: AreaOfKnowledge.NATUREZA },
