@@ -81,13 +81,17 @@ export default function QuizScreen() {
                           floorId: floor.id, 
                           hits: correctAnswers
                       });
+                      
+                      practice.finalizeWithPartial(true); 
+                      sessionStorage.removeItem('studr_exam_mode'); 
+                      navigate(AppView.TOWER);
+                  } else {
+                      // 🔥 MODIFICAÇÃO AQUI: Se não for Torre, vai para Resultados
+                      practice.finalizeWithPartial(true); 
+                      navigate(AppView.RESULTS);
                   }
-                  
-                  practice.finalizeWithPartial(true); 
-                  sessionStorage.removeItem('studr_exam_mode'); 
-                  navigate(AppView.TOWER);
               } catch (err) {
-                  console.error("Erro ao salvar progresso da torre:", err);
+                  console.error("Erro ao salvar progresso:", err);
               }
           }
           setIsFinalizing(false); 
@@ -126,22 +130,42 @@ export default function QuizScreen() {
 
   return (
     <div className="max-w-4xl mx-auto pt-6 px-4 pb-24">
+      {/* CABEÇALHO CORRIGIDO */}
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 gap-4 transition-colors">
-        <Button
-          variant="outline"
-          onClick={cancelAction}
-          className="text-sm px-4 py-2 flex items-center gap-2 border-slate-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800"
-        >
-          <span className="text-lg">←</span> {isMock ? 'Cancelar Simulado' : (isTowerMode ? 'Fugir da Batalha' : 'Cancelar Prática')}
-        </Button>
+        
+        {/* BOTÕES DE AÇÃO */}
+        <div className="flex gap-2 w-full md:w-auto">
+          <Button
+            variant="outline"
+            onClick={cancelAction}
+            className="flex-1 md:flex-none text-sm px-4 py-2 border-slate-200 dark:border-slate-700 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+          >
+            ← Cancelar
+          </Button>
+
+          {!isMock && (
+            <Button
+              variant="primary"
+              onClick={() => {
+                practice.finalizeWithPartial(true);
+                navigate(AppView.RESULTS);
+              }}
+              className="flex-1 md:flex-none text-sm px-4 py-2 bg-green-600 hover:bg-green-700 text-white"
+            >
+              Finalizar 📊
+            </Button>
+          )}
+        </div>
+
+        {/* PROGRESSO */}
         <div className="flex items-center gap-3">
           <div className="h-2 w-24 bg-gray-100 dark:bg-slate-800 rounded-full overflow-hidden">
-            <div className="h-full bg-enem-blue dark:bg-blue-500 animate-shimmer" style={{ width: '60%' }}></div>
+            <div className="h-full bg-enem-blue dark:bg-blue-500 animate-shimmer" style={{ width: `${(currentQuestionIndex / (typeof effectiveTargetCount === 'number' ? effectiveTargetCount : 1)) * 100}%` }}></div>
           </div>
-          <span className="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase">Progresso da Sessão</span>
+          <span className="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase">Progresso</span>
         </div>
       </div>
-
+      
       <div className="flex justify-between items-center mb-8 animate-fade-in relative">
         <div className="flex flex-col items-center">
           <div className={`text-[10px] font-bold uppercase tracking-[0.2em] ${isTowerMode ? 'text-purple-500 animate-pulse' : 'text-gray-400 dark:text-slate-500'}`}>

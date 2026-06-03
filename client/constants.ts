@@ -1,4 +1,3 @@
-
 import { AreaOfKnowledge } from './types';
 
 export const SUBJECT_AREAS = [
@@ -19,11 +18,11 @@ export const GAMIFICATION_SUBJECTS = {
     "Química", "Física", "Biologia"
   ],
   [AreaOfKnowledge.EXATAS]: [
-    "Exatas"
+    "Matemática"
   ]
 };
 
-// Flattened list for the generator buttons
+// Lista limpa e única para os botões do HomeView
 export const SPECIFIC_SUBJECTS = [
   { name: 'Matemática', area: AreaOfKnowledge.EXATAS },
   { name: 'Física', area: AreaOfKnowledge.NATUREZA },
@@ -56,7 +55,7 @@ export const SUBJECT_TOPICS: Record<string, string[]> = {
   "Física": ["Mecânica", "Termologia", "Óptica", "Eletricidade", "Ondulatória"],
   "Química": ["Química Geral", "Físico-Química", "Química Orgânica", "Meio Ambiente"],
   "Biologia": ["Citologia", "Genética", "Evolução", "Ecologia", "Fisiologia Humana"],
-  "Exatas": ["Álgebra", "Geometria", "Tratamento de Informação", "Razão e Proporção", "Funções"]
+  "Matemática": ["Álgebra", "Geometria", "Tratamento de Informação", "Razão e Proporção", "Funções"]
 };
 
 export const STUDY_GUIDE_SUBJECTS = Object.keys(SUBJECT_TOPICS);

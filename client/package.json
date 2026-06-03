@@ -15,8 +15,8 @@
     "@fingerprintjs/fingerprintjs": "^5.1.0",
     "jspdf": "^4.2.1",
     "lucide-react": "^0.575.0",
-    "react": "^19.2.1",
-    "react-dom": "^19.2.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "react-markdown": "^10.1.0",
     "reactflow": "^11.11.4",
     "recharts": "^3.5.1"

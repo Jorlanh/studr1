@@ -31,8 +31,11 @@ const QuestionCard: React.FC<QuestionCardProps> = ({ question, selectedOption, o
         <div className="flex justify-between items-start mb-4">
           <div className="flex gap-2">
             <Badge color="blue">{question.area}</Badge>
+            {/* 🔥 Lógica traduzida mantendo a cor original */}
             <Badge color={question.difficulty === Difficulty.HARD ? 'red' : question.difficulty === Difficulty.MEDIUM ? 'yellow' : 'green'}>
-              {question.difficulty}
+              {question.difficulty === Difficulty.HARD ? 'Difícil' : 
+               question.difficulty === Difficulty.MEDIUM ? 'Médio' : 
+               'Fácil'}
             </Badge>
           </div>
           <span className="text-xs text-gray-400 dark:text-slate-500 font-mono">ID: {question.id}</span>

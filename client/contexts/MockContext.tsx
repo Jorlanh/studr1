@@ -38,7 +38,7 @@ interface MockContextValue {
 const MockContext = createContext<MockContextValue | null>(null);
 
 const DIFFICULTY_KEY: Record<string, string> = {
-  'Fácil': 'EASY', 'Média': 'MEDIUM', 'Difícil': 'HARD',
+  'Fácil': 'Fácil', 'Média': 'Média', 'Difícil': 'Difícil',
 };
 
 export function MockProvider({ children }: PropsWithChildren) {

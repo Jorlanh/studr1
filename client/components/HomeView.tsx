@@ -114,7 +114,7 @@ export default function HomeView() {
 
   const isPremium = user?.isPremium;
   const isMockOnly = user?.subscriptionStatus === 'MOCK_ONLY';
-
+  const isAdmin = user?.role === 'ADMIN';
   // Controle de estado para o Modal das Regras da Torre
   const [isRulesModalOpen, setIsRulesModalOpen] = useState(false);
 
@@ -202,6 +202,32 @@ export default function HomeView() {
         {/* MODULE GRID */}
     <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
 
+          {/* ========================================= */}
+          {/* 0 - PAINEL ADMIN (VISÍVEL APENAS PARA VOCÊ) */}
+          {/* ========================================= */}
+          {isAdmin && (
+            <BentoCard className="md:col-span-12 min-h-[120px] border-red-500/30 dark:border-red-500/30 bg-red-50/50 dark:bg-red-950/10">
+              <div className="flex flex-col md:flex-row items-center justify-between gap-4 h-full">
+                <div className="flex items-center gap-4 w-full">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-red-600 to-orange-600 flex items-center justify-center text-2xl shadow-lg shadow-red-500/30 flex-shrink-0">
+                    🛡️
+                  </div>
+                  <div>
+                    <h2 className="text-xl md:text-2xl font-black text-red-600 dark:text-red-400 tracking-tight uppercase">Central Admin Studr</h2>
+                    <p className="text-xs md:text-sm text-slate-600 dark:text-slate-400">Você está logado como Administrador. Acesse as estatísticas e gerencie a plataforma.</p>
+                  </div>
+                </div>
+
+                <Button
+                  onClick={() => navigate(AppView.ADMIN_PANEL)} 
+                  className="w-full md:w-auto h-12 px-8 rounded-2xl font-black bg-gradient-to-r from-red-600 to-orange-600 shadow-[0_10px_30px_rgba(239,68,68,0.3)] hover:scale-105 transition-transform whitespace-nowrap"
+                >
+                  ⚙️ Acessar Painel
+                </Button>
+              </div>
+            </BentoCard>
+          )}
+
       {/* ========================================= */}
       {/* 1 - PRÁTICA INFINITA (CARRO CHEFE) */}
       {/* ========================================= */}
@@ -287,26 +313,24 @@ export default function HomeView() {
           {/* Right */}
           <div className="lg:w-[320px]">
             <div className="grid grid-cols-2 gap-2">
-              {SPECIFIC_SUBJECTS.slice(0, 8).map((subject) => (
+              {SPECIFIC_SUBJECTS.map((subject) => (
                 <button
                   key={subject.name}
                   disabled={practiceLoading}
-                  onClick={() =>
-                    startPractice(subject.area, subject.name)
-                  }
+                  onClick={() => startPractice(subject.area, subject.name)}
                   className="
-                  p-3
-                  rounded-2xl
-                  text-xs
-                  font-bold
-                  border
-                  border-slate-200 dark:border-slate-700
-                  bg-white/60 dark:bg-slate-800/60
-                  backdrop-blur-xl
-                  hover:border-blue-400
-                  hover:-translate-y-1
-                  transition-all
-                "
+                    p-3
+                    rounded-2xl
+                    text-xs
+                    font-bold
+                    border
+                    border-slate-200 dark:border-slate-700
+                    bg-white/60 dark:bg-slate-800/60
+                    backdrop-blur-xl
+                    hover:border-blue-400
+                    hover:-translate-y-1
+                    transition-all
+                  "
                 >
                   {subject.name}
                 </button>

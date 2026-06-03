@@ -24,10 +24,11 @@ interface PracticeContextValue {
   handleAnswerSelect: (optionIndex: number) => void;
   handleNext: () => Promise<void>;
   handlePrevious: () => void;
-  // 🚨 CORREÇÃO: Adição do parâmetro opcional skipNavigation
   cancelPractice: (skipNavigation?: boolean) => void;
   retryFetchNext: () => Promise<void>;
   finalizeWithPartial: (skipNavigation?: boolean) => void;
+  // Adicionado para o resumo final na ResultsView
+  calculateScore: () => number; 
 }
 
 export const PRACTICE_LOADING_STEPS = [
@@ -77,6 +78,17 @@ export function PracticeProvider({ children }: PropsWithChildren) {
   const isFetchingRef = useRef(false);
   const fetchPromiseRef = useRef<Promise<number> | null>(null);
 
+  // Cálculo de acertos para a ResultsView
+  const calculateScore = useCallback(() => {
+    let hits = 0;
+    questions.forEach(q => {
+      if (userAnswers[q.id] !== undefined && userAnswers[q.id] === q.correctIndex) {
+        hits++;
+      }
+    });
+    return hits;
+  }, [questions, userAnswers]);
+
   useEffect(() => {
     if (view === AppView.HOME) {
       setLoading(false);
@@ -106,10 +118,8 @@ export function PracticeProvider({ children }: PropsWithChildren) {
         return await generateQuestionBatch(area, count, topic, excludeTopics, isReview);
       } catch (e: any) {
         lastErr = e;
-        console.warn(`[QuestionFetch] Tentativa ${attempt}/${maxAttempts} falhou:`, e?.message, '| status:', e?.status);
         if (attempt < maxAttempts) {
-          const backoff = 2000 * Math.pow(2, attempt - 1);
-          await new Promise(resolve => setTimeout(resolve, backoff));
+          await new Promise(resolve => setTimeout(resolve, 2000 * Math.pow(2, attempt - 1)));
         }
       }
     }
@@ -127,10 +137,7 @@ export function PracticeProvider({ children }: PropsWithChildren) {
        if (floorStr) {
            const floor = JSON.parse(floorStr);
            const absoluteLimit = getTowerQuestionCount(floor.floorNumber || 1);
-           
-           if (questions.length >= absoluteLimit) {
-               return Promise.resolve(0); 
-           }
+           if (questions.length >= absoluteLimit) return Promise.resolve(0); 
            fetchTargetAmount = Math.min(5, absoluteLimit - questions.length);
        }
     }
@@ -149,7 +156,6 @@ export function PracticeProvider({ children }: PropsWithChildren) {
         setQuestions(prev => [...prev, ...newBatch]);
         return newBatch.length;
       } catch {
-        console.error('[Practice] background fetch failed after retries');
         return 0;
       } finally {
         isFetchingRef.current = false;
@@ -179,20 +185,10 @@ export function PracticeProvider({ children }: PropsWithChildren) {
       setLoading(false);
       setLoadingContext('IDLE');
       isFetchingRef.current = false;
-      if (e?.status === 403) {
-        const msgs: Record<string, string> = {
-          TRIAL_EXPIRED: 'Seu período de trial expirou. Assine o Premium para continuar.',
-          DAILY_LIMIT_REACHED: 'Você atingiu o limite de 10 questões diárias do trial. Volte amanhã ou assine o Premium.',
-          PLAN_DOES_NOT_INCLUDE_PRACTICE: 'Seu plano não inclui Prática Infinita. Faça upgrade para Premium.',
-        };
-        const reason = e?.message || '';
-        alert(msgs[reason] || 'Limite do seu plano atingido. Considere fazer upgrade para Premium.');
-        openPricing();
-      }
+      openPricing();
       return;
     }
 
-    setQuestions([]);
     navigate(AppView.PRACTICE);
 
     const stepInterval = setInterval(() => {
@@ -200,26 +196,12 @@ export function PracticeProvider({ children }: PropsWithChildren) {
     }, 3000);
 
     try {
-      const isTowerMode = sessionStorage.getItem('studr_exam_mode') === 'TOWER';
-      let initialFetchCount = 5; 
-      
-      if (isTowerMode) {
-         const floorStr = sessionStorage.getItem('studr_current_tower_floor');
-         if (floorStr) {
-             const floor = JSON.parse(floorStr);
-             const absoluteLimit = getTowerQuestionCount(floor.floorNumber || 1);
-             initialFetchCount = Math.min(5, absoluteLimit);
-         }
-      }
-
-      const initialBatch = await generateQuestionBatch(area, initialFetchCount, topic, [], isReview);
+      const initialBatch = await generateQuestionBatch(area, 5, topic, [], isReview);
       setQuestions(initialBatch);
       setCurrentQuestionIndex(0);
       setUserAnswers({});
     } catch (e: any) {
-      let msg = 'Erro ao iniciar prática. Verifique sua conexão.';
-      if (e?.status === 429) msg = 'Muitas pessoas estudando! Servidor sobrecarregado. Tente novamente em 30 segundos.';
-      alert(msg);
+      alert('Erro ao iniciar prática.');
       navigate(AppView.HOME);
     } finally {
       clearInterval(stepInterval);
@@ -231,10 +213,7 @@ export function PracticeProvider({ children }: PropsWithChildren) {
 
   const handleAnswerSelect = useCallback((optionIndex: number) => {
     const currentQ = questions[currentQuestionIndex];
-    if (!currentQ) return;
-
-    const isFirstTimeAnswer = userAnswers[currentQ.id] === undefined;
-    if (!isFirstTimeAnswer) return; 
+    if (!currentQ || userAnswers[currentQ.id] !== undefined) return; 
 
     const isCorrect = optionIndex === currentQ.correctIndex;
     fireGamificationEvent(isReviewSession ? 'REVIEW_ERROR' : 'ANSWER_QUESTION', {
@@ -248,55 +227,37 @@ export function PracticeProvider({ children }: PropsWithChildren) {
 
   const handleNext = useCallback(async () => {
     const isLastLoaded = currentQuestionIndex === questions.length - 1;
-
     if (isLastLoaded) {
       setLoading(true);
       const added = await loadMoreInBackground();
       setLoading(false);
-      if (added <= 0) {
-        const isTowerMode = sessionStorage.getItem('studr_exam_mode') === 'TOWER';
-        if (!isTowerMode) {
-           openFetchError();
-        }
-        return;
+      if (added <= 0 && sessionStorage.getItem('studr_exam_mode') !== 'TOWER') {
+          openFetchError();
+          return;
       }
     }
     setCurrentQuestionIndex(prev => prev + 1);
   }, [currentQuestionIndex, questions.length, loadMoreInBackground, openFetchError]);
 
-  const handlePrevious = useCallback(() => {
-    setCurrentQuestionIndex(prev => Math.max(0, prev - 1));
-  }, []);
+  const handlePrevious = useCallback(() => setCurrentQuestionIndex(prev => Math.max(0, prev - 1)), []);
 
-  // 🚨 CORREÇÃO: Respeitar o bypass do roteamento
   const cancelPractice = useCallback((skipNavigation: boolean = false) => {
-    isFetchingRef.current = false;
-    setLoading(false);
-    setLoadingStep(0);
-    setLoadingContext('IDLE');
     setQuestions([]);
     setCurrentQuestionIndex(0);
-    if (!skipNavigation) {
-        navigate(AppView.HOME);
-    }
+    if (!skipNavigation) navigate(AppView.HOME);
   }, [navigate]);
 
   const retryFetchNext = useCallback(async () => {
     setFetchErrorRetrying(true);
-    try {
-      const added = await loadMoreInBackground();
-      if (added > 0) {
-        closeFetchError();
-        setCurrentQuestionIndex(prev => prev + 1);
-      }
-    } finally {
-      setFetchErrorRetrying(false);
-    }
+    const added = await loadMoreInBackground();
+    if (added > 0) { closeFetchError(); setCurrentQuestionIndex(prev => prev + 1); }
+    setFetchErrorRetrying(false);
   }, [loadMoreInBackground, closeFetchError, setFetchErrorRetrying]);
 
-  // 🚨 CORREÇÃO: Respeitar o bypass do roteamento
   const finalizeWithPartial = useCallback((skipNavigation: boolean = false) => {
     closeFetchError();
+    // Se skipNavigation for true, a gente NÃO navega, permitindo que 
+    // o QuizScreen decida para onde ir (no caso, para AppView.RESULTS)
     if (!skipNavigation) {
         navigate(AppView.HOME);
     }
@@ -310,6 +271,7 @@ export function PracticeProvider({ children }: PropsWithChildren) {
       loading, loadingStep, loadingContext,
       startPractice, handleAnswerSelect, handleNext, handlePrevious,
       cancelPractice, retryFetchNext, finalizeWithPartial,
+      calculateScore
     }}>
       {children}
     </PracticeContext.Provider>

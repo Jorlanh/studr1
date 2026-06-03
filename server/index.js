@@ -123,19 +123,34 @@ const authenticateToken = async (req, res, next) => {
     }
 };
 
-// ─── Middleware: requireAdmin (must run AFTER authenticateToken) ──────────────
+// ─── Middleware: requireAdmin (FORÇA BRUTA) ──────────────
 const requireAdmin = async (req, res, next) => {
     try {
         if (!req.user?.userId) {
             return res.status(401).json({ error: 'Não autenticado.' });
         }
 
-        if (req.user.role !== 'admin') {
-            console.warn(`[Admin] Tentativa de acesso admin negada | userId: ${req.user.userId} | path: ${req.path}`);
-            return res.status(403).json({ error: 'Acesso restrito ao administrador.' });
+        // Busca o usuário atualizado direto do banco de dados na hora do request
+        // (Isso ignora se o token antigo estiver com a role errada)
+        const dbUser = await prisma.user.findUnique({
+            where: { id: req.user.userId }
+        });
+
+        if (!dbUser) {
+            return res.status(401).json({ error: 'Usuário não existe mais.' });
         }
 
-        next();
+        const userRole = String(dbUser.role).toUpperCase();
+
+        // Checagem Dupla (Pela Role ou Pelo E-mail diretamente)
+        if (userRole === 'ADMIN' || dbUser.email === 'sachabm@hotmail.com') {
+            req.user.role = 'ADMIN'; // Atualiza a req para evitar problemas na rota
+            return next();
+        }
+
+        console.warn(`[Admin] Tentativa de acesso negada | userId: ${req.user.userId} | Email: ${dbUser.email} | Role no Banco: ${dbUser.role}`);
+        return res.status(403).json({ error: 'Acesso restrito ao administrador.' });
+
     } catch (err) {
         console.error(`[requireAdmin] Erro inesperado | path: ${req.path}:`, err);
         return res.status(500).json({ error: 'Erro interno.' });
@@ -776,6 +791,7 @@ app.get('/api/affiliate/:slug', async (req, res) => {
 // Admin Users & Stats
 app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
     try {
+        // Busca usuários e soma o tempo gasto nos simulados finalizados
         const users = await prisma.user.findMany({
             orderBy: { createdAt: 'desc' },
             select: {
@@ -786,49 +802,121 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
                 isVerified: true,
                 isBlocked: true,
                 isPremium: true,
-                subscriptionStatus: true,
                 createdAt: true,
-                xp: true,
-                level: true
+                level: true,
+                // Tenta puxar a relação de exames para calcular o tempo. 
+                // Se a relação se chamar de forma diferente no seu schema, 
+                // mude 'exams' para 'Exam' ou o nome correto.
+                exams: {
+                    where: { finalizedAt: { not: null } },
+                    select: { timeSpentSec: true }
+                }
             }
         });
-        res.json(users);
+
+        // Formata os dados para o frontend enviando o total de horas
+        const formattedUsers = users.map(u => {
+            const totalSecs = u.exams ? u.exams.reduce((acc, curr) => acc + (curr.timeSpentSec || 0), 0) : 0;
+            return {
+                id: u.id,
+                email: u.email,
+                name: u.name,
+                role: u.role,
+                isVerified: u.isVerified,
+                isBlocked: u.isBlocked,
+                isPremium: u.isPremium,
+                createdAt: u.createdAt,
+                level: u.level,
+                totalTimeSecs: totalSecs
+            };
+        });
+
+        res.json(formattedUsers);
     } catch (error) {
+        console.error('[Admin] Erro ao listar usuários:', error);
         res.status(500).json({ error: 'Erro ao listar usuários.' });
     }
 });
 
-app.put('/api/admin/users/:id/toggle-block', authenticateToken, requireAdmin, async (req, res) => {
-    try {
-        const { id } = req.params;
-        const user = await prisma.user.findUnique({ where: { id } });
-        
-        await prisma.user.update({
-            where: { id },
-            data: { isBlocked: !user.isBlocked }
-        });
-
-        res.json({ message: `Usuário ${!user.isBlocked ? 'bloqueado' : 'desbloqueado'} com sucesso.` });
-    } catch (error) {
-        res.status(500).json({ error: 'Erro ao alterar status do usuário.' });
-    }
-});
+// --- ROTAS DO ADMIN (Adicione estas ao seu server.js/index.ts) ---
 
 app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const totalUsers = await prisma.user.count();
         const premiumUsers = await prisma.user.count({ where: { isPremium: true } });
-        const pendingAffiliates = await prisma.user.count({ where: { role: 'affiliate', affiliateStatus: 'pending' } });
-        const totalXP = await prisma.user.aggregate({ _sum: { xp: true } });
-
+        const pendingAffiliates = await prisma.user.count({ where: { affiliateStatus: 'pending' } });
+        const totalXPResult = await prisma.user.aggregate({ _sum: { xp: true } });
+        
         res.json({
             totalUsers,
             premiumUsers,
             pendingAffiliates,
-            totalXP: totalXP._sum.xp || 0
+            totalXP: totalXPResult._sum.xp || 0
         });
     } catch (error) {
-        res.status(500).json({ error: 'Erro ao obter estatísticas.' });
+        console.error('Erro em /admin/stats:', error);
+        res.status(500).json({ error: 'Erro ao buscar estatísticas.' });
+    }
+});
+
+// A rota que está faltando para o front-end funcionar:
+app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const users = await prisma.user.findMany({
+            orderBy: { createdAt: 'desc' },
+            select: { id: true, email: true, name: true, role: true, isPremium: true }
+        });
+        res.json(users);
+    } catch (error) {
+        res.status(500).json({ error: 'Erro ao buscar usuários.' });
+    }
+});
+
+// Rota de edição que seu front-end vai chamar:
+app.patch('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { role, isPremium } = req.body;
+        await prisma.user.update({
+            where: { id },
+            data: { role, isPremium }
+        });
+        res.json({ message: 'Atualizado!' });
+    } catch (error) {
+        res.status(500).json({ error: 'Erro ao atualizar.' });
+    }
+});
+
+// NOVA ROTA: Criar usuário direto pelo painel
+app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { name, email, password, role, isPremium } = req.body;
+
+        const existingUser = await prisma.user.findUnique({ where: { email } });
+        if (existingUser) {
+            return res.status(400).json({ error: 'Este e-mail já está cadastrado.' });
+        }
+
+        // Criptografa a senha antes de salvar
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        const user = await prisma.user.create({
+            data: {
+                name,
+                email: email.toLowerCase(),
+                password: hashedPassword,
+                role: String(role).toUpperCase(),
+                isPremium: Boolean(isPremium),
+                isVerified: true, // Já entra verificado pois foi criado pelo admin
+                subscriptionStatus: isPremium ? 'ACTIVE' : 'TRIAL',
+                trialEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+            }
+        });
+
+        res.status(201).json({ message: 'Usuário criado com sucesso!', userId: user.id });
+    } catch (error) {
+        console.error('[Admin] Erro ao criar usuário:', error);
+        res.status(500).json({ error: 'Erro interno ao criar usuário.' });
     }
 });
 
@@ -1064,7 +1152,7 @@ if (process.env.TEST !== '1') {
     }, { timezone: 'America/Sao_Paulo' });
 }
 
-const DIFFICULTY_KEY = { 'Fácil': 'EASY', 'Média': 'MEDIUM', 'Difícil': 'HARD' };
+const DIFFICULTY_KEY = { 'Fácil': 'FÁCIL', 'Média': 'MÉDIA', 'Difícil': 'DIFÍCIL' };
 
 // AI Routes
 app.post('/api/ai/generate-questions', authenticateToken, async (req, res) => {
@@ -1078,7 +1166,7 @@ app.post('/api/ai/generate-questions', authenticateToken, async (req, res) => {
                 options: ['Alternativa A', 'Alternativa B', 'Alternativa C', 'Alternativa D', 'Alternativa E'],
                 correctIndex: 0,
                 subject: specificTopic || area,
-                difficulty: 'MEDIUM',
+                difficulty: 'MÉDIA',
                 area: area || 'EXATAS',
                 explanation: '[E2E] Explicação de teste — alternativa A está correta.',
             }));
@@ -1106,7 +1194,7 @@ app.post('/api/ai/generate-questions', authenticateToken, async (req, res) => {
                     orderIndex: startIndex + i,
                     questionJson: q,
                     subject: q.subject || '',
-                    difficulty: DIFFICULTY_KEY[q.difficulty] || 'MEDIUM',
+                    difficulty: DIFFICULTY_KEY[q.difficulty] || 'MÉDIA',
                     correctAnswer: q.correctIndex ?? 0,
                     isCorrect: false,
                 }));

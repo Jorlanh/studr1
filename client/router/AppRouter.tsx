@@ -13,14 +13,14 @@ import HomeView from '../components/HomeView';
 import QuizScreen from '../components/QuizScreen';
 import ResultsView from '../components/ResultsView';
 import EssayView from '../components/EssayView';
-import TowerEssayView from '../components/TowerEssayView'; // 🚨 NOVO IMPORT AQUI
+import TowerEssayView from '../components/TowerEssayView';
 import EssayModelBank from '../components/EssayModelBank';
 import StudyMapView from '../components/StudyMapView';
 import GamificationView from '../components/GamificationView';
 import ExamHistoryView from '../components/ExamHistoryView';
 import ExamReviewView from '../components/ExamReviewView';
 import TowerView from '../components/TowerView';
-import AdminShell from '../components/AdminShell';
+import AdminShell from '../components/AdminShell'; // 🔥 GARANTINDO O IMPORT AQUI
 import LandingPage from '../components/LandingPageV3';
 import AffiliateLandingPage from '../components/AffiliateLandingPage';
 import AffiliateApplicationView from '../components/AffiliateApplicationView';
@@ -62,7 +62,9 @@ export function AppRouter() {
     !window.location.hostname.includes('railway.app');
 
   const [currentReviewExamId, setCurrentReviewExamId] = React.useState<string | null>(null);
-
+  const mock = useMock();
+  const practice = usePractice();
+  const isMock = view === AppView.MOCK_EXAM;
   // ─── Full-page views (no app shell) ─────────────────────────────────────────
 
   if (isRestoring) {
@@ -112,6 +114,11 @@ export function AppRouter() {
 
   if (view === AppView.AFFILIATE_DASHBOARD && user) {
     return <AffiliateDashboardView user={user} onLogout={handleLogout} />;
+  }
+
+  // 🔥 VIEW COMPLETA DO PAINEL ADMIN COM TUDO
+  if (view === AppView.ADMIN_PANEL && user?.role === 'ADMIN') {
+    return <AdminShell onBack={() => navigate(AppView.HOME)} />;
   }
 
   if (view === AppView.TERMS) {
@@ -218,7 +225,7 @@ export function AppRouter() {
       </header>
 
       {/* Admin banner */}
-      {user?.role === 'admin' && view === AppView.HOME && (
+      {user?.role === 'ADMIN' && view === AppView.HOME && (
         <div className="bg-gradient-to-r from-purple-700 to-purple-900 text-white px-6 py-2 flex justify-between items-center shadow-lg border-b border-purple-800/30">
           <div className="flex items-center gap-3 text-xs font-bold uppercase tracking-wider">
             <span className="flex h-2 w-2 rounded-full bg-red-500 animate-ping" />
@@ -234,7 +241,7 @@ export function AppRouter() {
       )}
 
       {/* Expired trial overlay */}
-      {!user?.isPremium && !trialActive && user?.role === 'student' && (
+      {!user?.isPremium && !trialActive && user?.role === 'STUDENT' && (
         <div className="fixed inset-0 z-[100] bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-6 text-center animate-fade-in">
           <Card className="max-w-md w-full p-10 border-2 border-enem-blue shadow-[0_0_50px_rgba(0,74,173,0.3)] bg-white dark:bg-slate-900 border-t-8">
             <div className="w-20 h-20 bg-blue-50 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-6 transform -rotate-12">
@@ -277,18 +284,25 @@ export function AppRouter() {
       {/* Main content */}
       {view === AppView.HOME && <HomeView />}
       {(view === AppView.PRACTICE || view === AppView.MOCK_EXAM) && <QuizScreen />}
+      
+      {/* 🔥 BLOCO CORRIGIDO ABAIXO */}
       {view === AppView.RESULTS && (
         <ResultsView
-          questions={mockQuestions}
-          userAnswers={mockAnswers}
-          finalScore={lastExamScore}
-          scoreBand={lastExamBand}
+          questions={isMock ? mock.questions : practice.questions}
+          userAnswers={isMock ? mock.userAnswers : practice.userAnswers}
+          finalScore={isMock ? mock.lastExamScore : practice.calculateScore()} // 🔥 Se você implementou o calculateScore
           onBackToHome={() => navigate(AppView.HOME)}
-          onNewMockExam={() => startSimulado(simuladoMode ?? 'FULL', simuladoTargetArea ?? undefined)}
-          onPracticeMore={() => startPractice(selectedArea, activeSessionTopic || undefined, false)}
-          timeElapsed={formatTime(examDuration - timeRemaining)}
+          // Se não existir calculateScore, passamos 0 e tratamos a nota dentro do ResultsView
+          scoreBand={isMock ? mock.lastExamBand : 'N/A'}
+                    
+          // 🔥 Adicionando as props obrigatórias que o TS reclamou
+          onNewMockExam={() => mock.startSimulado(mock.simuladoMode ?? 'FULL', mock.simuladoTargetArea ?? undefined)}
+          onPracticeMore={() => practice.startPractice(practice.selectedArea, practice.activeSessionTopic || undefined, false)}
+          
+          timeElapsed={isMock ? mock.formatTime(mock.examDuration - mock.timeRemaining) : 'Modo Prática'}
         />
       )}
+
       {view === AppView.EXAM_HISTORY && (
         <ExamHistoryView
           onBack={() => navigate(AppView.HOME)}
@@ -299,7 +313,7 @@ export function AppRouter() {
         <ExamReviewView examId={currentReviewExamId!} onBack={() => navigate(AppView.EXAM_HISTORY)} />
       )}
       
-      {/* 🚨 CORREÇÃO: Renderização Condicional - Separando Jornada da Plataforma */}
+      {/* Renderização Condicional - Separando Jornada da Plataforma */}
       {view === AppView.ESSAY && (
          sessionStorage.getItem('studr_exam_mode') === 'TOWER' ? (
             <TowerEssayView />
@@ -335,27 +349,14 @@ export function AppRouter() {
               }));
 
               if (isEssayFloor) {
-                 // Roteamento forçado para a Redação com o Tema da Torre
-                 sessionStorage.setItem('studr_exam_mode', 'TOWER'); // Garante que ative o TowerEssayView
+                 sessionStorage.setItem('studr_exam_mode', 'TOWER'); 
                  navigate(AppView.ESSAY);
               } else {
-                 // É um Andar Normal: O 'floor.topic' atuará como a ÚNICA matéria específica
                  sessionStorage.setItem('studr_exam_mode', 'TOWER');
                  startPractice(floor.area, floor.topic, false); 
               }
            }} 
         />
-      )}
-      
-      {view === AppView.ADMIN_PANEL && user?.role === 'admin' && (
-        <AdminShell onBack={() => navigate(AppView.HOME)} />
-      )}
-      {view === AppView.ADMIN_PANEL && user?.role !== 'admin' && (
-        <div className="max-w-xl mx-auto p-8 text-center">
-          <h2 className="text-2xl font-bold text-red-600 mb-2">Acesso restrito</h2>
-          <p className="text-gray-600 dark:text-slate-400 mb-6">Esta área é exclusiva para administradores.</p>
-          <Button onClick={() => navigate(AppView.HOME)}>Voltar ao Início</Button>
-        </div>
       )}
 
       {/* Global loading overlay (when generating from home) */}
