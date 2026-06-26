@@ -50,9 +50,9 @@ const PricingPage: React.FC<PricingPageProps> = ({ onBack, onSubscribe, isModal 
   const annualDiscountPct = Math.round((annualSavings / (monthlyPrice * 12)) * 100);
 
   const handleCheckout = (plan?: 'annual' | 'monthly' | 'mock') => {
-    const KIWIFY_ANNUAL_URL = affiliateData?.annual.checkoutUrl || "https://pay.kiwify.com.br/fpDFotr";
-    const KIWIFY_MONTHLY_URL = affiliateData?.monthly.checkoutUrl || "https://pay.kiwify.com.br/Hg2LvcM";
-    const KIWIFY_MOCK_URL = affiliateData?.simulado.checkoutUrl || "https://pay.kiwify.com.br/ffVPq7P";
+    const KIWIFY_ANNUAL_URL = affiliateData?.annual.checkoutUrl || "https://pay.kiwify.com.br/XRDY3Pq"; // Plano Anual
+    const KIWIFY_MONTHLY_URL = affiliateData?.monthly.checkoutUrl || "https://pay.kiwify.com.br/RgS7hZy"; // Plano Mensal
+    const KIWIFY_MOCK_URL = affiliateData?.simulado.checkoutUrl || "https://pay.kiwify.com.br/FPVMgXp"; // Plano Simulado
 
     let checkoutUrl = '';
     if (plan === 'mock') {
@@ -83,12 +83,12 @@ const PricingPage: React.FC<PricingPageProps> = ({ onBack, onSubscribe, isModal 
               <button onClick={handleBack} className="text-gray-500 dark:text-slate-400 font-medium hover:text-enem-blue transition-colors">
                 Voltar
               </button>
-              <Button 
+              <Button
                 onClick={(e: any) => {
                   e.stopPropagation();
                   onSubscribe();
-                }} 
-                variant="primary" 
+                }}
+                variant="primary"
                 className="px-6 py-2"
               >
                 Entrar
@@ -121,7 +121,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onBack, onSubscribe, isModal 
         {/* Toggle */}
         <div className={`flex items-center justify-center gap-4 ${isModal ? 'mb-6' : 'mb-12'}`}>
           <span className={`text-sm font-bold ${billingCycle === 'monthly' ? 'text-gray-900 dark:text-white' : 'text-gray-400'}`}>Mensal</span>
-          <button 
+          <button
             onClick={() => setBillingCycle(billingCycle === 'monthly' ? 'annual' : 'monthly')}
             className="w-16 h-8 bg-gray-200 dark:bg-slate-800 rounded-full p-1 relative transition-colors duration-300 focus:outline-none"
           >
@@ -159,7 +159,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onBack, onSubscribe, isModal 
                 <span className={`${isModal ? 'text-4xl' : 'text-5xl'} font-extrabold text-gray-900 dark:text-white`}>{currentPrice.toFixed(2).replace('.', ',')}</span>
                 <span className="text-gray-400 dark:text-slate-500">/mês</span>
               </div>
-              
+
               {billingCycle === 'annual' ? (
                 <div className="text-xs text-green-600 dark:text-green-400 font-bold mb-6">
                   Cobrado anualmente (R$ {annualTotal.toFixed(0)}) • Economia de R$ {annualSavings.toFixed(0)}/ano
@@ -171,15 +171,15 @@ const PricingPage: React.FC<PricingPageProps> = ({ onBack, onSubscribe, isModal 
               )}
 
               <p className={`text-gray-500 dark:text-slate-400 text-sm ${isModal ? 'mb-4' : 'mb-8'} min-h-[40px]`}>
-                {billingCycle === 'monthly' 
-                  ? 'Perfeito para quem quer dar o primeiro passo.' 
+                {billingCycle === 'monthly'
+                  ? 'Perfeito para quem quer dar o primeiro passo.'
                   : 'Aqui é onde a mágica acontece.'}
               </p>
 
-              <Button 
-                onClick={() => handleCheckout()} 
+              <Button
+                onClick={() => handleCheckout()}
                 loading={loading}
-                variant="primary" 
+                variant="primary"
                 className={`w-full ${isModal ? 'py-3 text-base' : 'py-4 text-lg'} bg-gradient-to-r from-enem-blue to-blue-600 hover:shadow-lg hover:scale-[1.02] transition-all font-black shadow-xl flex items-center justify-center gap-2`}
               >
                 QUERO SER APROVADO

@@ -141,23 +141,14 @@ const callGroq = async (messages, isJson) => {
 // 🚨 INCREMENTO: Adicionado 'forceProvider' e timeoutMs padrão aumentado para lidar com o Railway
 const executeHybridAI = async (messages, isJson = true, retries = 2, timeoutMs = 60000, forceProvider = null) => {
     const now = Date.now();
-    let selectedProvider = forceProvider || primaryProvider;
-
-    // Lógica de alternância rápida (só ocorre se não houver um provider forçado)
-    if (!forceProvider) {
-        if (selectedProvider === 'gemini' && now < geminiCooldownUntil) selectedProvider = 'groq';
-        if (selectedProvider === 'groq' && now < groqCooldownUntil) selectedProvider = 'gemini';
-    }
+    // Forçado o uso exclusivo de gemini
+    let selectedProvider = 'gemini';
 
     try {
         const startTime = Date.now();
         let responseText = "";
         
-        if (selectedProvider === 'gemini') {
-            responseText = await withTimeout(callGemini(messages, isJson), timeoutMs);
-        } else {
-            responseText = await withTimeout(callGroq(messages, isJson), timeoutMs);
-        }
+        responseText = await withTimeout(callGemini(messages, isJson), timeoutMs);
 
         console.log(`[AI:Hybrid] ✓ Sucesso via ${selectedProvider.toUpperCase()} (${Date.now() - startTime}ms)`);
         return responseText;
@@ -173,17 +164,16 @@ const executeHybridAI = async (messages, isJson = true, retries = 2, timeoutMs =
             
             // Reduzimos o cooldown para quase zero, forçando o retry imediato que a API paga aceitará
             if (selectedProvider === 'gemini') geminiCooldownUntil = Date.now() + 2000;
-            if (selectedProvider === 'groq') groqCooldownUntil = Date.now() + 2000;
 
             if (retries > 0) {
                 await delay(500); // Pequena pausa apenas para sincronia
-                return executeHybridAI(messages, isJson, retries - 1, timeoutMs, selectedProvider === 'gemini' ? 'groq' : 'gemini');
+                return executeHybridAI(messages, isJson, retries - 1, timeoutMs, 'gemini');
             }
         } 
         
         if (error.name === 'APITimeoutError') {
-            console.warn(`[AI:Hybrid] ⚠️ Timeout no ${selectedProvider.toUpperCase()}. Alternando...`);
-            if (retries > 0) return executeHybridAI(messages, isJson, retries - 1, timeoutMs, selectedProvider === 'gemini' ? 'groq' : 'gemini');
+            console.warn(`[AI:Hybrid] ⚠️ Timeout no ${selectedProvider.toUpperCase()}. Tentando novamente...`);
+            if (retries > 0) return executeHybridAI(messages, isJson, retries - 1, timeoutMs, 'gemini');
         }
 
         console.error(`[AI:Hybrid] ✗ Erro crítico no ${selectedProvider.toUpperCase()}:`, error.message);
@@ -491,7 +481,7 @@ export const generateStudyMap = async (subject, topic) => {
 };
 
 // 🚨 SOLUÇÃO PARA O ERRO DO TUTOR IA: 
-// 1. Forçado modelo Groq (Llama) por ser ultra-rápido.
+// 1. Forçado modelo Gemini por ser o único ativo.
 // 2. Tempo de timeout estendido enormemente para evitar corte prematuro.
 export const getChatResponse = async (history, newMessage) => {
     const messages = [
@@ -499,6 +489,6 @@ export const getChatResponse = async (history, newMessage) => {
         ...history.map(msg => ({ role: msg.role === 'user' ? 'user' : 'assistant', content: msg.text })),
         { role: "user", content: newMessage }
     ];
-    // Usa 'groq' como forceProvider e 60000ms de timeout para garantir que responde sempre
-    return await executeHybridAI(messages, false, 2, 60000, 'groq');
+    // Usa 'gemini' como forceProvider e 60000ms de timeout para garantir que responde sempre
+    return await executeHybridAI(messages, false, 2, 60000, 'gemini');
 };

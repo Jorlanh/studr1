@@ -54,16 +54,41 @@ export function AppRouter() {
     closeFetchError,
   } = useUI();
   const { navLevel, navXpPercent, fireGamificationEvent } = useGamification();
-  const { startPractice, selectedArea, activeSessionTopic, retryFetchNext: practiceRetry, finalizeWithPartial: practiceFinalizePartial, loading: practiceLoading, loadingContext } = usePractice();
-  const { simuladoMode, simuladoTargetArea, lastExamScore, lastExamBand, questions: mockQuestions, userAnswers: mockAnswers, timeRemaining, isTimeUp, formatTime, examDuration, startSimulado, retryFetchNext: mockRetry, finalizeWithPartial: mockFinalizePartial, cancelMock } = useMock();
+  const practice = usePractice();
+  const mock = useMock();
+
+  const {
+    startPractice,
+    selectedArea,
+    activeSessionTopic,
+    retryFetchNext: practiceRetry,
+    finalizeWithPartial: practiceFinalizePartial,
+    loading: practiceLoading,
+    loadingContext,
+  } = practice;
+
+  const {
+    simuladoMode,
+    simuladoTargetArea,
+    lastExamScore,
+    lastExamBand,
+    questions: mockQuestions,
+    userAnswers: mockAnswers,
+    timeRemaining,
+    isTimeUp,
+    formatTime,
+    examDuration,
+    startSimulado,
+    retryFetchNext: mockRetry,
+    finalizeWithPartial: mockFinalizePartial,
+    cancelMock,
+  } = mock;
 
   const isRootDomain = !window.location.hostname.startsWith('app.') &&
     window.location.hostname !== 'localhost' &&
     !window.location.hostname.includes('railway.app');
 
   const [currentReviewExamId, setCurrentReviewExamId] = React.useState<string | null>(null);
-  const mock = useMock();
-  const practice = usePractice();
   const isMock = view === AppView.MOCK_EXAM;
   // ─── Full-page views (no app shell) ─────────────────────────────────────────
 
@@ -288,18 +313,14 @@ export function AppRouter() {
       {/* 🔥 BLOCO CORRIGIDO ABAIXO */}
       {view === AppView.RESULTS && (
         <ResultsView
-          questions={isMock ? mock.questions : practice.questions}
-          userAnswers={isMock ? mock.userAnswers : practice.userAnswers}
-          finalScore={isMock ? mock.lastExamScore : practice.calculateScore()} // 🔥 Se você implementou o calculateScore
+          questions={isMock ? mockQuestions : practice.questions}
+          userAnswers={isMock ? mockAnswers : practice.userAnswers}
+          finalScore={isMock ? (lastExamScore ?? 0) : practice.calculateScore()}
           onBackToHome={() => navigate(AppView.HOME)}
-          // Se não existir calculateScore, passamos 0 e tratamos a nota dentro do ResultsView
-          scoreBand={isMock ? mock.lastExamBand : 'N/A'}
-                    
-          // 🔥 Adicionando as props obrigatórias que o TS reclamou
-          onNewMockExam={() => mock.startSimulado(mock.simuladoMode ?? 'FULL', mock.simuladoTargetArea ?? undefined)}
-          onPracticeMore={() => practice.startPractice(practice.selectedArea, practice.activeSessionTopic || undefined, false)}
-          
-          timeElapsed={isMock ? mock.formatTime(mock.examDuration - mock.timeRemaining) : 'Modo Prática'}
+          scoreBand={isMock ? (lastExamBand ?? 'N/A') : 'N/A'}
+          onNewMockExam={() => startSimulado(simuladoMode ?? 'FULL', simuladoTargetArea ?? undefined)}
+          onPracticeMore={() => startPractice(selectedArea, activeSessionTopic || undefined, false)}
+          timeElapsed={isMock ? formatTime(examDuration - timeRemaining) : 'Modo Prática'}
         />
       )}
 

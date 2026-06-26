@@ -27,3 +27,8 @@ dist-ssr
 *.tmp
 .~lock.*
 Thumbs.db
+
+# Environment secrets
+.env
+server/.env
+

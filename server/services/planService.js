@@ -42,9 +42,25 @@ const startOfMonthMs = () => {
 
 // ─── Plan detection ───────────────────────────────────────────────────────────
 export const getUserPlan = (user) => {
-    if (user.isPremium) return 'PREMIUM';
-    if (user.subscriptionStatus === 'MOCK_ONLY') return 'MOCK_ONLY';
-    if (user.trialEndsAt && new Date() < new Date(user.trialEndsAt)) return 'TRIAL';
+    // Lista de status que significam que o cliente está com a assinatura ativa e paga
+    const premiumStatuses = ['PREMIUM', 'ACTIVE', 'FULL', 'PAID'];
+    const currentStatus = user.subscriptionStatus ? String(user.subscriptionStatus).toUpperCase() : '';
+
+    // Se o booleano for true OU o status estiver na lista acima, ele é PREMIUM
+    if (user.isPremium === true || premiumStatuses.includes(currentStatus)) {
+        return 'PREMIUM';
+    }
+
+    if (currentStatus === 'MOCK_ONLY') {
+        return 'MOCK_ONLY';
+    }
+
+    // Se não for pagante, verifica se o período de teste ainda está válido
+    if (user.trialEndsAt && new Date() < new Date(user.trialEndsAt)) {
+        return 'TRIAL';
+    }
+
+    // Se não caiu em nenhum dos acima, o acesso expirou
     return 'EXPIRED';
 };
 

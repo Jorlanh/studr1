@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import { randomUUID, createHmac } from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import { Resend } from 'resend';
+import { rateLimit } from 'express-rate-limit';
 
 // ─── SERVICES ─────────────────────────────────────────────────────────────
 import * as aiService from './services/aiService.js';
@@ -24,6 +25,7 @@ import cron from 'node-cron';
 dotenv.config();
 
 const app = express();
+app.set('trust proxy', 1);
 const prisma = new PrismaClient();
 const E2E_MODE = process.env.E2E_MODE === '1';
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -33,15 +35,20 @@ const JWT_SECRET = process.env.JWT_SECRET || 'studr_secret_key';
 const ABUSE_THRESHOLD = 5;       // max new fingerprints in 7 days before account block
 const CODE_EXPIRY_MINUTES = 10;  // device auth code expiry
 
+function normalizeEmail(email) {
+    return String(email || '').trim().toLowerCase();
+}
+
 const allowedOrigins = process.env.FRONTEND_URL
     ? process.env.FRONTEND_URL.split(',').map(url => url.trim())
     : ['http://localhost:3000'];
 
 app.use(cors({
-    origin: [...allowedOrigins, 'http://localhost:3000', 'http://localhost:5173'],
+    origin: [...allowedOrigins, 'http://localhost:3000', 'http://localhost:3001', 'http://localhost:5173'],
     credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ limit: '1mb', extended: true }));
 
 // ─── Helper: send device verification email ───────────────────────────────────
 async function sendDeviceVerificationEmail(email, name, code) {
@@ -84,76 +91,83 @@ async function sendRecoveryEmail(email, name, code) {
     });
 }
 
-// ─── Middleware: authenticateToken (Multi-acesso Liberado) ───────────────────
-const authenticateToken = async (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+// ─── Middlewares de Autenticação e Autorização ───────────────────────────────
+import { authenticateToken, requireAdmin, checkRole } from './authMiddleware.js';
 
-    if (!token) return res.status(401).json({ error: 'Acesso negado.' });
 
-    try {
-        const payload = jwt.verify(token, process.env.JWT_SECRET);
-        
-        const user = await prisma.user.findUnique({
-            where: { id: payload.userId },
-            select: { id: true, isBlocked: true, role: true }
-        });
+// Rate Limiter para rotas críticas de escrita e autenticação (Login e Cadastro)
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutos
+    max: 10, // Limite de 10 tentativas por IP por janela
+    message: { error: 'Muitas requisições vindas deste IP. Tente novamente em 15 minutos.' },
+    standardHeaders: true, // Retorna as informações de limite nos headers RateLimit-*
+    legacyHeaders: false, // Desabilita os headers X-RateLimit-* antigos
+    skip: (req) => process.env.NODE_ENV === 'test' || process.env.VITEST === 'true' || process.env.E2E_MODE === '1'
+});
 
-        if (!user) {
-            console.warn(`[Auth] Usuário não encontrado no banco: ${payload.userId}`);
-            return res.status(403).json({ error: 'Usuário não encontrado.' });
-        }
+// Rate Limiter para Webhooks da Kiwify
+const webhookLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minuto
+    max: 120, // Permite até 120 requisições por minuto por IP
+    message: { error: 'Muitas requisições de webhook. Limite excedido.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => process.env.NODE_ENV === 'test' || process.env.VITEST === 'true' || process.env.E2E_MODE === '1'
+});
 
-        if (user.isBlocked) {
-            console.warn(`[Auth] Tentativa de acesso de conta bloqueada: ${payload.userId}`);
-            return res.status(403).json({ error: 'Sua conta está bloqueada por atividade suspeita. Entre em contato com o suporte.' });
-        }
-
-        req.user = { userId: user.id, role: user.role };
-        next();
-
-    } catch (err) {
-        if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
-            console.warn(`[Auth] Token inválido ou expirado: ${err.message} | path: ${req.path}`);
-            return res.status(403).json({ error: 'Token inválido ou expirado. Faça login novamente.' });
-        }
-
-        console.error(`[Auth Critical Error] Erro inesperado no middleware | path: ${req.path}:`, err);
-        return res.status(500).json({ error: 'Erro interno ao validar acesso. Tente novamente em instantes.' });
+// Middleware para validação do Cloudflare Turnstile no Backend
+const validateTurnstile = async (req, res, next) => {
+    // Se estiver em modo de testes ou E2E, ignora a validação do Turnstile
+    if (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true' || process.env.E2E_MODE === '1') {
+        return next();
     }
-};
 
-// ─── Middleware: requireAdmin (FORÇA BRUTA) ──────────────
-const requireAdmin = async (req, res, next) => {
+    const secretKey = process.env.TURNSTILE_SECRET_KEY;
+    
+    // Se a chave não estiver configurada no .env em ambiente local, gera aviso e deixa passar para não travar o desenvolvimento local
+    if (!secretKey || secretKey === '1x0000000000000000000000000000000AA') {
+        console.warn('[Security Warning] Cloudflare Turnstile ignorado: TURNSTILE_SECRET_KEY ausente ou configurada com chave de testes.');
+        return next();
+    }
+
+    // O token pode vir no corpo da requisição ou no header x-turnstile-token
+    const token = req.body?.turnstileToken || req.headers['x-turnstile-token'] || req.headers['cf-turnstile-token'];
+
+    if (!token) {
+        return res.status(400).json({ error: 'Token anti-bot (Turnstile) ausente.' });
+    }
+
     try {
-        if (!req.user?.userId) {
-            return res.status(401).json({ error: 'Não autenticado.' });
+        // Envia requisição para a API de siteverify do Cloudflare Turnstile
+        const ip = req.ip || req.headers['x-forwarded-for'];
+        
+        const params = new URLSearchParams();
+        params.append('secret', secretKey);
+        params.append('response', token);
+        if (ip) {
+            params.append('remoteip', ip);
         }
 
-        // Busca o usuário atualizado direto do banco de dados na hora do request
-        // (Isso ignora se o token antigo estiver com a role errada)
-        const dbUser = await prisma.user.findUnique({
-            where: { id: req.user.userId }
+        const verifyResponse = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+            method: 'POST',
+            body: params,
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
         });
 
-        if (!dbUser) {
-            return res.status(401).json({ error: 'Usuário não existe mais.' });
+        const outcome = await verifyResponse.json();
+
+        if (!outcome.success) {
+            console.warn(`[Security Alert] Validação de Turnstile falhou para o IP: ${ip}. Erros: ${JSON.stringify(outcome['error-codes'])}`);
+            return res.status(400).json({ error: 'Token anti-bot (Turnstile) inválido ou expirado.' });
         }
 
-        const userRole = String(dbUser.role).toUpperCase();
-
-        // Checagem Dupla (Pela Role ou Pelo E-mail diretamente)
-        if (userRole === 'ADMIN' || dbUser.email === 'sachabm@hotmail.com') {
-            req.user.role = 'ADMIN'; // Atualiza a req para evitar problemas na rota
-            return next();
-        }
-
-        console.warn(`[Admin] Tentativa de acesso negada | userId: ${req.user.userId} | Email: ${dbUser.email} | Role no Banco: ${dbUser.role}`);
-        return res.status(403).json({ error: 'Acesso restrito ao administrador.' });
-
-    } catch (err) {
-        console.error(`[requireAdmin] Erro inesperado | path: ${req.path}:`, err);
-        return res.status(500).json({ error: 'Erro interno.' });
+        // Token válido, prossegue
+        next();
+    } catch (error) {
+        console.error('[Security Error] Falha de comunicação com a API do Cloudflare Turnstile:', error);
+        return res.status(500).json({ error: 'Erro ao verificar token anti-bot. Tente novamente.' });
     }
 };
 
@@ -166,7 +180,7 @@ app.post('/api/payments/create-checkout', authenticateToken, async (req, res) =>
         const user = await prisma.user.findUnique({ where: { id: req.user.userId } });
 
         const asaasCustomerId = await asaasService.getOrCreateCustomer(user);
-        
+
         if (user.asaasCustomerId !== asaasCustomerId) {
             await prisma.user.update({
                 where: { id: user.id },
@@ -178,7 +192,7 @@ app.post('/api/payments/create-checkout', authenticateToken, async (req, res) =>
 
         await prisma.user.update({
             where: { id: user.id },
-            data: { 
+            data: {
                 asaasSubscriptionId: subscriptionId,
                 subscriptionStatus: 'PENDING',
                 billingCycle: planType === 'annual' ? 'YEARLY' : 'MONTHLY'
@@ -192,11 +206,12 @@ app.post('/api/payments/create-checkout', authenticateToken, async (req, res) =>
     }
 });
 
-// Kiwify Webhook
-app.post('/api/webhooks/kiwify', async (req, res) => {
+
+// Kiwify Webhook (aceita tanto no plural quanto no singular para evitar erros de configuração)
+app.post(['/api/webhooks/kiwify', '/api/webhook/kiwify'], webhookLimiter, async (req, res) => {
     try {
         const { token } = req.query;
-        const expectedToken = process.env.KIWIFY_TOKEN;
+        const expectedToken = process.env.KIWIFY_TOKEN || process.env.KIWIFY_WEBHOOK_SECRET;
 
         if (expectedToken && token !== expectedToken) {
             console.error('[Kiwify Webhook] Invalid Token provided in query string');
@@ -204,31 +219,60 @@ app.post('/api/webhooks/kiwify', async (req, res) => {
         }
 
         const body = req.body;
-        console.log('[Kiwify Webhook] Event Received:', body.order_status, body.customer?.email);
+        // Suporta tanto payloads planos quanto envelopados em "data" (como ocorre em algumas APIs/split da Kiwify)
+        const payload = body.data ? body.data : body;
 
-        const { order_status, customer, product_id, subscription_id } = body;
+        const order_status = payload.order_status || payload.orderStatus || payload.Order_Status || payload.status;
+        const customer = payload.Customer || payload.customer;
+        const product = payload.Product || payload.product;
+        const product_id = product?.product_id || product?.productId || payload.product_id || payload.productId;
+        const product_name = product?.product_name || product?.productName || payload.product_name || payload.productName;
 
-        if (!customer?.email) {
+        const subscription = payload.Subscription || payload.subscription || payload.Assinatura || payload.assinatura;
+        const subscriptionPlanId =
+            typeof subscription === 'string'
+                ? subscription
+                : subscription?.plan_id || subscription?.planId || subscription?.id || subscription?.product_id || subscription?.productId || subscription?.assinatura_id || subscription?.assinaturaId || subscription?.plan?.id || subscription?.plan?.plan_id || subscription?.plan?.planId;
+        const kiwifyPlanId = subscriptionPlanId || product_id;
+
+        const email = (customer?.email || payload.email || payload.customer_email || '').toLowerCase().trim();
+        const name = customer?.full_name || customer?.first_name || payload.name || payload.customer_name || '';
+
+        console.log('[Kiwify Webhook] Event Received Status:', order_status, 'Email:', email, 'Plan/Product ID:', kiwifyPlanId);
+
+        if (!email) {
+            console.error('[Kiwify Webhook] Missing customer email in payload:', JSON.stringify(body));
             return res.status(400).json({ error: 'Missing customer email' });
         }
 
-        const email = customer.email.toLowerCase();
-        const name = customer.full_name || customer.first_name || '';
+        // ─── CORREÇÃO 2: Busca flexível no banco de dados ───
+        // Tenta buscar pelo ID do Plano específico. Se não achar, busca pelo ID do Produto Pai.
+        let plan = null;
+        if (kiwifyPlanId) {
+            plan = await prisma.plan.findFirst({
+                where: {
+                    OR: [
+                        { kiwifyProductId: String(kiwifyPlanId) },
+                        { kiwifyProductId: String(product_id) }
+                    ]
+                }
+            });
+        }
 
-        const plan = await prisma.plan.findUnique({
-            where: { kiwifyProductId: product_id }
-        });
+        const normalizedStatus = String(order_status || '').toLowerCase().trim();
+        const isPaid = ['paid', 'approved'].includes(normalizedStatus);
+        const isCanceled = ['refunded', 'chargeback', 'canceled', 'cancelled', 'refund'].includes(normalizedStatus);
 
-        if (order_status === 'paid') {
+        if (isPaid) {
             let user = await prisma.user.findUnique({ where: { email } });
             let isNewUser = false;
             let tempPassword = '';
 
             if (!user) {
                 isNewUser = true;
-                tempPassword = Math.random().toString(36).slice(-8); 
+                tempPassword = Math.random().toString(36).slice(-8);
                 const hashedPassword = await bcrypt.hash(tempPassword, 10);
-                
+
                 user = await prisma.user.create({
                     data: {
                         email,
@@ -237,70 +281,90 @@ app.post('/api/webhooks/kiwify', async (req, res) => {
                         isVerified: true,
                     }
                 });
+                console.log(`[Kiwify Webhook] Novo usuário criado: ${email}`);
             }
 
-            const isFullAccess = plan ? plan.accessLevel === 'FULL' : true; 
-            const subStatus = plan ? plan.accessLevel : 'ACTIVE';
-            const cycle = plan ? plan.billingCycle : (body.product_name?.toLowerCase().includes('anual') ? 'YEARLY' : 'MONTHLY');
+            // ─── CORREÇÃO 3: Garantia de Fallback Seguro para Liberar o Usuário ───
+            // Se 'plan' for null (não mapeado no banco), assume nível total para não barrar o cliente pagante
+            const isFullAccess = plan ? plan.accessLevel === 'FULL' : true;
+            const subStatus = plan ? plan.accessLevel : 'FULL'; // Alterado de 'ACTIVE' para 'FULL' ou o padrão do seu app
+            const cycle = plan ? plan.billingCycle : (product_name?.toLowerCase().includes('anual') ? 'YEARLY' : 'MONTHLY');
 
+            // Atualiza o status do usuário para Premium
             await prisma.user.update({
                 where: { email },
                 data: {
-                    isPremium: isFullAccess,
+                    isPremium: true, // Força true se pagou com sucesso
                     subscriptionStatus: subStatus,
                     billingCycle: cycle,
-                    planId: plan?.id || null,
+                    planId: plan?.id || null, // Se ainda for null, garanta que suas rotas aceitem isPremium: true de forma isolada
                     lastPaymentDate: new Date(),
                     trialEndsAt: new Date()
                 }
             });
 
+            console.log(`[Kiwify Webhook] Acesso Premium liberado para: ${email}`);
+
             if (isNewUser) {
-                const planName = plan ? plan.name : body.product_name || 'Assinatura';
-                await resend.emails.send({
-                    from: process.env.RESEND_FROM_EMAIL || 'Studr <onboarding@resend.dev>',
-                    to: email,
-                    subject: `🚀 Bem-vindo ao Studr! Sua conta no plano ${planName}`,
-                    html: `
-                        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: auto; padding: 32px; border: 1px solid #eee; border-radius: 12px;">
-                            <h2 style="color: #004aad;">Seja bem-vindo(a)!</h2>
-                            <p>Sua assinatura do <strong>${planName}</strong> foi confirmada.</p>
-                            <p>Use os dados abaixo para acessar a plataforma:</p>
-                            <div style="background: #f0f4ff; border-radius: 8px; padding: 20px; margin: 20px 0;">
-                                <p style="margin: 5px 0;"><strong>E-mail:</strong> ${email}</p>
-                                <p style="margin: 5px 0;"><strong>Senha Temporária:</strong> ${tempPassword}</p>
+                const planName = plan ? plan.name : product_name || 'Assinatura';
+                try {
+                    await resend.emails.send({
+                        from: process.env.RESEND_FROM_EMAIL || 'Studr <onboarding@resend.dev>',
+                        to: email,
+                        subject: `🚀 Bem-vindo ao Studr! Sua conta no plano ${planName}`,
+                        html: `
+                            <div style="font-family: Arial, sans-serif; max-width: 480px; margin: auto; padding: 32px; border: 1px solid #eee; border-radius: 12px;">
+                                <h2 style="color: #004aad;">Seja bem-vindo(a)!</h2>
+                                <p>Sua assinatura do <strong>${planName}</strong> foi confirmada.</p>
+                                <p>Use os dados abaixo para acessar a plataforma:</p>
+                                <div style="background: #f0f4ff; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                                    <p style="margin: 5px 0;"><strong>E-mail:</strong> ${email}</p>
+                                    <p style="margin: 5px 0;"><strong>Senha Temporária:</strong> ${tempPassword}</p>
+                                </div>
+                                <p>Acesse agora em: <a href="https://app.studr.com.br" style="color: #004aad; font-weight: bold;">app.studr.com.br</a></p>
+                                <p style="color: #999; font-size: 12px; margin-top: 20px;">Recomendamos alterar sua senha após o primeiro acesso.</p>
                             </div>
-                            <p>Acesse agora em: <a href="https://app.studr.com.br" style="color: #004aad; font-weight: bold;">app.studr.com.br</a></p>
-                            <p style="color: #999; font-size: 12px; margin-top: 20px;">Recomendamos alterar sua senha após o primeiro acesso.</p>
-                        </div>
-                    `
-                });
-            }
-        } 
-        
-        else if (['refunded', 'chargeback', 'canceled'].includes(order_status)) {
-            await prisma.user.update({
-                where: { email },
-                data: {
-                    isPremium: false,
-                    subscriptionStatus: 'CANCELED',
-                    planId: null
+                        `
+                    });
+                    console.log(`[Kiwify Webhook] E-mail de boas-vindas enviado para: ${email}`);
+                } catch (emailError) {
+                    console.error('[Kiwify Webhook Error] Falha ao enviar e-mail pelo Resend:', emailError.message);
                 }
-            });
-            console.log(`[Kiwify Webhook] Access removed for ${email} due to status: ${order_status}`);
+            }
         }
 
-        res.json({ received: true });
+        else if (isCanceled) {
+            const userExists = await prisma.user.findUnique({ where: { email } });
+            if (userExists) {
+                await prisma.user.update({
+                    where: { email },
+                    data: {
+                        isPremium: false,
+                        subscriptionStatus: 'CANCELED',
+                        planId: null
+                    }
+                });
+                console.log(`[Kiwify Webhook] Acesso removido para ${email} devido ao status: ${order_status}`);
+            }
+        }
+
+        return res.json({ received: true });
+
     } catch (error) {
-        console.error('[Kiwify Webhook Error]:', error);
-        res.status(500).json({ error: 'Webhook processing failed' });
+        console.error('[Kiwify Webhook Error Critical]:', error);
+        return res.status(500).json({ error: 'Webhook processing failed internally' });
     }
 });
 
 
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', authLimiter, validateTurnstile, async (req, res) => {
     try {
-        const { email, name, password, referralId, referralSource } = req.body;
+        const email = normalizeEmail(req.body.email);
+        const { name, password, referralId, referralSource } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email e senha são obrigatórios.' });
+        }
 
         const existingUser = await prisma.user.findUnique({ where: { email } });
         if (existingUser) {
@@ -315,7 +379,7 @@ app.post('/api/auth/register', async (req, res) => {
 
         const user = await prisma.user.create({
             data: {
-                email: email.toLowerCase(),
+                email,
                 name,
                 password: hashedPassword,
                 verificationCode,
@@ -341,7 +405,12 @@ app.post('/api/auth/register', async (req, res) => {
 
 app.post('/api/auth/register-affiliate', async (req, res) => {
     try {
-        const { email, name, password, phone } = req.body;
+        const email = normalizeEmail(req.body.email);
+        const { name, password, phone } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email e senha são obrigatórios.' });
+        }
 
         const existingUser = await prisma.user.findUnique({ where: { email } });
         if (existingUser) {
@@ -370,7 +439,8 @@ app.post('/api/auth/register-affiliate', async (req, res) => {
 
 app.post('/api/auth/verify', async (req, res) => {
     try {
-        const { email, code } = req.body;
+        const email = normalizeEmail(req.body.email);
+        const { code } = req.body;
         const user = await prisma.user.findUnique({ where: { email } });
 
         if (!user || user.verificationCode !== code) {
@@ -393,9 +463,10 @@ app.post('/api/auth/verify', async (req, res) => {
     }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authLimiter, async (req, res) => {
     try {
-        const { email, password, fingerprint } = req.body;
+        const email = normalizeEmail(req.body.email);
+        const { password, fingerprint } = req.body;
         console.log(`[Login Attempt] Tentativa de login para: ${email}`);
 
         const user = await prisma.user.findUnique({ where: { email } });
@@ -420,8 +491,8 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(403).json({ error: 'Conta bloqueada por atividade suspeita. Entre em contato com o suporte.' });
         }
 
-        const TEST_EMAILS = ['trial@studr.com.br', 'premium@studr.com.br', 'simulado@studr.com.br'];
-        if (!fingerprint || TEST_EMAILS.includes(user.email)) {
+        const TEST_EMAILS = ['trial@studr.com.br', 'premium@studr.com.br', 'simulado@studr.com.br', 'admin@studr.com.br'];
+        if (!fingerprint || TEST_EMAILS.includes(user.email) || String(user.role).toUpperCase() === 'ADMIN') {
             const sessionToken = randomUUID();
             await prisma.user.update({ where: { id: user.id }, data: { sessionToken } });
             const token = jwt.sign({ userId: user.id, sessionToken }, JWT_SECRET);
@@ -486,7 +557,8 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/auth/verify-device', async (req, res) => {
     try {
-        const { email, code, fingerprint } = req.body;
+        const email = normalizeEmail(req.body.email);
+        const { code, fingerprint } = req.body;
 
         const user = await prisma.user.findUnique({ where: { email } });
         if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
@@ -519,7 +591,7 @@ app.post('/api/auth/verify-device', async (req, res) => {
 
 app.post('/api/auth/forgot-password', async (req, res) => {
     try {
-        const { email } = req.body;
+        const email = normalizeEmail(req.body.email);
         const user = await prisma.user.findUnique({ where: { email } });
 
         if (!user) {
@@ -545,7 +617,8 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 
 app.post('/api/auth/reset-password', async (req, res) => {
     try {
-        const { email, code, newPassword } = req.body;
+        const email = normalizeEmail(req.body.email);
+        const { code, newPassword } = req.body;
         const user = await prisma.user.findUnique({ where: { email } });
 
         if (!user || user.recoveryCode !== code) {
@@ -563,7 +636,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
                 password: hashedPassword,
                 recoveryCode: null,
                 recoveryCodeExpiresAt: null,
-                sessionToken: randomUUID() 
+                sessionToken: randomUUID()
             }
         });
 
@@ -585,7 +658,80 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
     }
 });
 
+// Endpoint Seguro de Atualização de Perfil (Proteção contra Mass Assignment)
+app.put('/api/users/update', authenticateToken, async (req, res) => {
+    try {
+        const { userId } = req.user;
+        const { name } = req.body;
+
+        // Proteção contra Mass Assignment: filtramos estritamente as propriedades do corpo.
+        // Campos como 'role', 'isPremium', 'xp', 'level' são completamente ignorados.
+        const updateData = {};
+        if (name !== undefined) {
+            updateData.name = name;
+        }
+
+        // Se o banco possuísse campos adicionais como 'photo' ou 'bio' permitidos no futuro:
+        // if (req.body.photo !== undefined) updateData.photo = req.body.photo;
+        // if (req.body.bio !== undefined) updateData.bio = req.body.bio;
+
+        if (Object.keys(updateData).length === 0) {
+            return res.status(400).json({ error: 'Nenhum campo válido enviado para atualização.' });
+        }
+
+        const updatedUser = await prisma.user.update({
+            where: { id: userId },
+            data: updateData
+        });
+
+        res.json({
+            message: 'Perfil atualizado com sucesso!',
+            user: buildUserPayload(updatedUser)
+        });
+    } catch (error) {
+        console.error('[User Update Error]:', error);
+        res.status(500).json({ error: 'Erro ao atualizar perfil.' });
+    }
+});
+
+// Endpoint Seguro de Consumo de Conteúdo Premium (Consulta direto no Banco de Dados)
+app.get('/api/premium/features', authenticateToken, async (req, res) => {
+    try {
+        const { userId } = req.user;
+
+        // Busca o status isPremium atualizado direto do banco de dados
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { isPremium: true }
+        });
+
+        if (!user) {
+            return res.status(404).json({ error: 'Usuário não encontrado.' });
+        }
+
+        // Validação direta do banco de dados (Never Trust the Client)
+        if (!user.isPremium) {
+            console.warn(`[Premium Access Blocked] Usuário não possui plano ativo: ${userId}`);
+            return res.status(403).json({ error: 'Acesso negado: Conteúdo exclusivo para usuários Premium.' });
+        }
+
+        res.json({
+            message: 'Bem-vindo à área Premium!',
+            features: [
+                { id: 'simulados_ilimitados', name: 'Simulados Ilimitados' },
+                { id: 'analise_sisu_avancada', name: 'Análise Avançada do SISU com IA' },
+                { id: 'gerador_redacao_ilimitado', name: 'Gerador e Corretor de Redação' },
+                { id: 'estatisticas_detalhadas', name: 'Estatísticas de Estudo Detalhadas' }
+            ]
+        });
+    } catch (error) {
+        console.error('[Premium Features Error]:', error);
+        res.status(500).json({ error: 'Erro ao obter recursos premium.' });
+    }
+});
+
 function buildUserPayload(user) {
+    const trialEndsAt = user.trialEndsAt ? new Date(user.trialEndsAt) : null;
     return {
         id: user.id,
         email: user.email,
@@ -597,7 +743,7 @@ function buildUserPayload(user) {
         isPremium: user.isPremium,
         subscriptionStatus: user.subscriptionStatus,
         trialEndsAt: user.trialEndsAt,
-        trialActive: user.isPremium ? false : new Date() < new Date(user.trialEndsAt)
+        trialActive: user.isPremium ? false : (trialEndsAt ? new Date() < trialEndsAt : false)
     };
 }
 
@@ -846,7 +992,7 @@ app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) =>
         const premiumUsers = await prisma.user.count({ where: { isPremium: true } });
         const pendingAffiliates = await prisma.user.count({ where: { affiliateStatus: 'pending' } });
         const totalXPResult = await prisma.user.aggregate({ _sum: { xp: true } });
-        
+
         res.json({
             totalUsers,
             premiumUsers,
@@ -856,19 +1002,6 @@ app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) =>
     } catch (error) {
         console.error('Erro em /admin/stats:', error);
         res.status(500).json({ error: 'Erro ao buscar estatísticas.' });
-    }
-});
-
-// A rota que está faltando para o front-end funcionar:
-app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
-    try {
-        const users = await prisma.user.findMany({
-            orderBy: { createdAt: 'desc' },
-            select: { id: true, email: true, name: true, role: true, isPremium: true }
-        });
-        res.json(users);
-    } catch (error) {
-        res.status(500).json({ error: 'Erro ao buscar usuários.' });
     }
 });
 
@@ -887,10 +1020,33 @@ app.patch('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, r
     }
 });
 
+// Rota para alternar bloqueio de usuário (restaurada para compatibilidade com os testes)
+app.put('/api/admin/users/:id/toggle-block', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = await prisma.user.findUnique({ where: { id } });
+        if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
+        
+        await prisma.user.update({
+            where: { id },
+            data: { isBlocked: !user.isBlocked }
+        });
+
+        res.json({ message: `Usuário ${!user.isBlocked ? 'bloqueado' : 'desbloqueado'} com sucesso.` });
+    } catch (error) {
+        res.status(500).json({ error: 'Erro ao alterar status do usuário.' });
+    }
+});
+
 // NOVA ROTA: Criar usuário direto pelo painel
 app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
     try {
-        const { name, email, password, role, isPremium } = req.body;
+        const email = normalizeEmail(req.body.email);
+        const { name, password, role, isPremium } = req.body;
+
+        if (!email || !password || !name) {
+            return res.status(400).json({ error: 'Nome, e-mail e senha são obrigatórios.' });
+        }
 
         const existingUser = await prisma.user.findUnique({ where: { email } });
         if (existingUser) {
@@ -899,13 +1055,16 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
 
         // Criptografa a senha antes de salvar
         const hashedPassword = await bcrypt.hash(password, 10);
+        const roleValue = ['ADMIN', 'AFFILIATE', 'USER'].includes(String(role).toUpperCase())
+            ? String(role).toUpperCase()
+            : 'USER';
 
         const user = await prisma.user.create({
             data: {
                 name,
-                email: email.toLowerCase(),
+                email,
                 password: hashedPassword,
-                role: String(role).toUpperCase(),
+                role: roleValue,
                 isPremium: Boolean(isPremium),
                 isVerified: true, // Já entra verificado pois foi criado pelo admin
                 subscriptionStatus: isPremium ? 'ACTIVE' : 'TRIAL',
@@ -924,7 +1083,7 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
 
 app.post('/api/practice/start', authenticateToken, async (req, res) => {
     try {
-        const check = await checkAndConsumeQuestion(req.user.userId, 0); 
+        const check = await checkAndConsumeQuestion(req.user.userId, 0);
         if (!check.allowed) {
             return res.status(403).json({ error: check.reason, details: check });
         }
@@ -1073,7 +1232,7 @@ app.get('/api/tower/state', authenticateToken, async (req, res) => {
 app.post('/api/tower/submit', authenticateToken, async (req, res) => {
     try {
         const { floorId, hits, score } = req.body;
-        
+
         if (!floorId) {
             return res.status(400).json({ error: 'floorId é obrigatório.' });
         }
@@ -1083,7 +1242,7 @@ app.post('/api/tower/submit', authenticateToken, async (req, res) => {
         const finalHits = isEssay ? null : (hits || 0);
 
         const result = await submitFloorResult(req.user.userId, floorId, finalHits, score);
-        res.json(result); 
+        res.json(result);
     } catch (err) {
         console.error('[tower/submit] erro:', err.message);
         res.status(500).json({ error: 'Erro ao validar andar da torre.' });
@@ -1108,7 +1267,7 @@ app.post('/api/gamification/event', authenticateToken, async (req, res) => {
         if (!eventType) return res.status(400).json({ error: 'eventType obrigatório.' });
 
         const result = await emitEvent(req.user.userId, eventType, payload);
-        res.json(result); 
+        res.json(result);
     } catch (err) {
         console.error('[gamification/event] erro:', err);
         res.status(500).json({ error: 'Erro ao processar evento.' });
@@ -1129,7 +1288,7 @@ app.get('/api/gamification/state', authenticateToken, async (req, res) => {
 
 app.get('/api/ranking', authenticateToken, async (req, res) => {
     try {
-        const limit  = parseInt(req.query.limit  || '50');
+        const limit = parseInt(req.query.limit || '50');
         const offset = parseInt(req.query.offset || '0');
         const ranking = await getCurrentRanking(req.user.userId, limit, offset);
         res.json(ranking);
@@ -1246,6 +1405,9 @@ app.post('/api/ai/essay-theme', authenticateToken, async (req, res) => {
 app.post('/api/ai/evaluate-essay', authenticateToken, async (req, res) => {
     try {
         const { theme, essayText } = req.body;
+        if (typeof essayText !== 'string' || essayText.length > 10000) {
+            return res.status(400).json({ error: 'A redação excede o limite máximo de 10.000 caracteres.' });
+        }
         const evaluation = await aiService.evaluateEssay(theme, essayText);
         res.json(evaluation);
     } catch (error) {
@@ -1257,6 +1419,9 @@ app.post('/api/ai/evaluate-essay', authenticateToken, async (req, res) => {
 app.post('/api/ai/chat', authenticateToken, async (req, res) => {
     try {
         const { history, newMessage } = req.body;
+        if (typeof newMessage !== 'string' || newMessage.length > 2000) {
+            return res.status(400).json({ error: 'A mensagem excede o limite máximo de 2.000 caracteres.' });
+        }
         const response = await aiService.getChatResponse(history, newMessage);
         res.json({ text: response });
     } catch (error) {
