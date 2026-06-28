@@ -26,11 +26,13 @@
     "express-rate-limit": "^8.5.2",
     "jsonwebtoken": "^9.0.3",
     "node-cron": "^4.2.1",
+    "nodemailer": "^9.0.1",
     "openai": "^6.27.0",
     "prisma": "^5.22.0",
     "resend": "^6.9.2"
   },
   "devDependencies": {
+    "@types/node": "^26.0.1",
     "@vitest/coverage-v8": "^4.1.4",
     "supertest": "^7.2.2",
     "vitest": "^4.1.4"
