@@ -68,97 +68,85 @@ const JWT_SECRET = process.env.JWT_SECRET || 'studr_secret_key';
 
 
 
-// ─── SMTP CONFIG ─────────────────────────────────────────────────────────
+// ─── SMTP CONFIG (Hostinger - Modo Forçado) ───────────────────────────────
+console.log(`[Config] SMTP_HOST: ${process.env.SMTP_HOST}`);
 
 const smtpTransporter = nodemailer.createTransport({
-
-    host: process.env.SMTP_HOST || 'smtp.hostinger.com',
-
-    port: parseInt(process.env.SMTP_PORT || '465'),
-
+    host: "smtp.hostinger.com",   // Forçando direto
+    port: 465,
     secure: true,
-
     auth: {
-
         user: process.env.SMTP_USER,
-
         pass: process.env.SMTP_PASS
-
+    },
+    connectionTimeout: 90000,
+    greetingTimeout: 90000,
+    socketTimeout: 180000,
+    family: 4,                    // Força IPv4
+    tls: {
+        rejectUnauthorized: false,
+        minVersion: "TLSv1.2",
+        ciphers: "HIGH:!aNULL:!MD5"
     }
-
 });
 
+// Teste de conexão
+smtpTransporter.verify((error) => {
+    if (error) {
+        console.error('[SMTP] ❌ Falha na verificação:', error.message);
+    } else {
+        console.log('[SMTP] ✅ Conexão SMTP OK!');
+    }
+});
 
+// Teste automático ao iniciar
+smtpTransporter.verify((error) => {
+    if (error) {
+        console.error('[SMTP] ❌ Falha na conexão:', error.message);
+    } else {
+        console.log('[SMTP] ✅ Conexão com Hostinger SMTP estabelecida com sucesso!');
+    }
+});
 
-// ─── ROTERIZADOR HÍBRIDO (SMTP PRIMÁRIO + Resend Fallback) ───────────────────────
-
+// ─── ROTEADOR HÍBRIDO ───────────────────────────────────────────────────────
 async function sendEmailHybrid(to, subject, htmlContent) {
-
     const fromEmail = process.env.RESEND_FROM_EMAIL || 'suporte@studr.com.br';
-
-
-
-    // 1️⃣ SMTP como PRIMÁRIO
+    
+    console.log(`[Email] Tentando envio via Resend para: ${to}`);
 
     try {
-
-        await smtpTransporter.sendMail({
-
+        await resend.emails.send({
             from: fromEmail,
-
-            to,
-
-            subject,
-
+            to: to,
+            subject: subject,
             html: htmlContent
-
         });
 
-        console.log(`[Email:Hybrid] ✓ Sucesso via SMTP (Primário) para: ${to}`);
-
-        return;
-
-    } catch (smtpError) {
-
-        console.warn(`[Email:Hybrid] ⚠️ SMTP falhou (${smtpError.message}). Tentando Resend como fallback...`);
-
+        console.log(`[Email] ✓ Sucesso via Resend para: ${to}`);
+        return true;
+    } catch (error) {
+        console.error(`[Email] ✗ Resend falhou:`, error.message);
+        
+        // Fallback SMTP
+        console.log(`[Email] Tentando fallback SMTP...`);
+        try {
+            await smtpTransporter.sendMail({
+                from: fromEmail,
+                to,
+                subject,
+                html: htmlContent
+            });
+            console.log(`[Email] ✓ Sucesso via SMTP (Fallback)`);
+            return true;
+        } catch (smtpError) {
+            console.error(`[Email] ✗ Ambos falharam:`, smtpError.message);
+            return false;
+        }
     }
-
-
-
-    // 2️⃣ Resend como Fallback
-
-    try {
-
-        await resend.emails.send({ 
-
-            from: fromEmail, 
-
-            to, 
-
-            subject, 
-
-            html: htmlContent 
-
-        });
-
-        console.log(`[Email:Hybrid] ✓ Sucesso via Resend (Fallback) para: ${to}`);
-
-    } catch (resendError) {
-
-        console.error(`[Email:Hybrid] ✗ Falha crítica em ambos os provedores.`, resendError);
-
-    }
-
 }
 
-
-
 const ABUSE_THRESHOLD = 5;       // max new fingerprints in 7 days before account block
-
 const CODE_EXPIRY_MINUTES = 10;  // device auth code expiry
-
-
 
 function normalizeEmail(email) {
 
@@ -612,219 +600,115 @@ app.post(['/api/webhooks/kiwify', '/api/webhook/kiwify'], webhookLimiter, async 
 
         // --- CENÁRIO A: COMPRA APROVADA ---
 
+                // --- CENÁRIO A: COMPRA APROVADA ---
         if (isPaid) {
-
             
-
-            // Higieniza o telefone para criar uma senha numérica pura (ex: remove '+', '-', '()', espaços)
-
-            // Fallback: se a Kiwify não enviar telefone, gera uma senha aleatória de 8 caracteres.
-
             const cleanPhonePassword = rawPhone.replace(/\D/g, '') || Math.random().toString(36).slice(-8);
-
-            
-
-            // Hash criptográfico irreversível (Impossível de ser quebrado no banco)
-
             const hashedPassword = await bcrypt.hash(cleanPhonePassword, 10);
 
-
-
-            // Determina as regras do plano
-
-            const isFullAccess = plan ? plan.accessLevel === 'FULL' : true;
-
             const subStatus = plan ? plan.accessLevel : 'FULL';
-
             const cycle = plan ? plan.billingCycle : (productName?.toLowerCase().includes('anual') ? 'YEARLY' : 'MONTHLY');
 
-
-
             let user = await prisma.user.findUnique({ where: { email } });
-
             let isNewUser = false;
 
-
-
             if (!user) {
-
-                // CRIAR NOVO USUÁRIO: Acesso Liberado
-
                 isNewUser = true;
-
                 user = await prisma.user.create({
-
                     data: {
-
                         email,
-
                         name: fullName,
-
-                        password: hashedPassword, // Salva APENAS o Hash, nunca a senha pura. (Campo phone removido)
-
+                        password: hashedPassword,
                         isPremium: true,
-
                         subscriptionStatus: subStatus,
-
                         billingCycle: cycle,
-
                         planId: plan?.id || null,
-
                         lastPaymentDate: new Date(),
-
-                        trialEndsAt: new Date(), // Encerra o Trial instantaneamente
-
-                        isVerified: true // Compra aprovada vale como verificação
-
-                    }
-
-                });
-
-                console.log(`[Kiwify Webhook] Novo usuário criado e liberado: ${email}`);
-
-            } else {
-
-                // ATUALIZAR USUÁRIO EXISTENTE: Acesso Liberado
-
-                await prisma.user.update({
-
-                    where: { email },
-
-                    data: {
-
-                        isPremium: true,
-
-                        subscriptionStatus: subStatus,
-
-                        billingCycle: cycle,
-
-                        planId: plan?.id || null,
-
-                        lastPaymentDate: new Date(),
-
                         trialEndsAt: new Date(),
-
-                        isVerified: true // Garante verificação se ele não tinha feito ainda
-
+                        isVerified: true
                     }
-
                 });
-
+                console.log(`[Kiwify Webhook] Novo usuário criado e liberado: ${email}`);
+            } else {
+                await prisma.user.update({
+                    where: { email },
+                    data: {
+                        isPremium: true,
+                        subscriptionStatus: subStatus,
+                        billingCycle: cycle,
+                        planId: plan?.id || null,
+                        lastPaymentDate: new Date(),
+                        trialEndsAt: new Date(),
+                        isVerified: true
+                    }
+                });
                 console.log(`[Kiwify Webhook] Usuário existente atualizado: ${email}`);
-
             }
 
-
-
-            // Disparo do E-mail de Boas-vindas SOMENTE para novos usuários
-
+            // === ENVIO DE E-MAIL DE BOAS-VINDAS ===
             if (isNewUser) {
-
-                const planNameFinal = plan ? plan.name : productName;
-
-                const firstName = fullName.split(' ')[0];
-
-                
+                const planName = plan ? plan.name : productName || 'Plano Premium';
+                const firstName = fullName.split(' ')[0] || 'Aluno';
 
                 const htmlTemplate = `
-
                     <div style="font-family: Arial, sans-serif; background-color: #0d0d0d; color: #ffffff; padding: 40px 20px; text-align: center;">
-
                         <div style="max-width: 600px; margin: 0 auto; background-color: #1a1a1a; padding: 40px; border-radius: 8px; border-top: 4px solid #00e5ff;">
-
                             <h1 style="color: #00e5ff; margin-bottom: 20px; font-size: 28px;">Bem-vindo ao Studr, ${firstName}!</h1>
-
-                            <p style="font-size: 16px; line-height: 1.6; color: #cccccc;">Sua assinatura do <strong>${planNameFinal}</strong> foi confirmada. Seu acesso Premium já está <strong>liberado</strong>.</p>
-
+                            <p style="font-size: 16px; line-height: 1.6; color: #cccccc;">Sua assinatura do <strong>${planName}</strong> foi confirmada. Seu acesso Premium já está <strong>liberado</strong>.</p>
                             
-
                             <div style="background-color: #262626; padding: 20px; border-radius: 6px; margin: 30px 0; text-align: left;">
-
                                 <p style="margin: 0 0 10px 0; color: #a6a6a6; font-size: 14px;">SUAS CREDENCIAIS DE ACESSO</p>
-
                                 <p style="margin: 5px 0; font-size: 16px;"><strong>E-mail:</strong> <span style="color: #00e5ff;">${email}</span></p>
-
                                 <p style="margin: 5px 0; font-size: 16px;"><strong>Senha:</strong> <span style="color: #00e5ff;">${cleanPhonePassword}</span></p>
-
                             </div>
-
                             
-
-                            <p style="font-size: 14px; color: #808080; margin-bottom: 30px;">Dica: Se você não informou um número de telefone na compra, geramos uma senha segura para você acima. Recomendamos alterar a senha no primeiro acesso.</p>
-
+                            <p style="font-size: 14px; color: #808080; margin-bottom: 30px;">Dica: Recomendamos alterar sua senha no primeiro acesso.</p>
                             
-
                             <a href="https://app.studr.com.br" style="display: inline-block; background-color: #00e5ff; color: #000000; padding: 14px 30px; text-decoration: none; font-weight: bold; border-radius: 4px; font-size: 16px;">ACESSAR PLATAFORMA</a>
-
                         </div>
-
                     </div>
-
                 `;
 
-                sendEmailHybrid(email, '⚡ Seu acesso ao Studr está liberado!', htmlTemplate);
-
+                try {
+                    await resend.emails.send({
+                        from: "Studr <onboarding@resend.dev>",
+                        to: email,
+                        subject: `⚡ Seu acesso ao Studr está liberado!`,
+                        html: htmlTemplate
+                    });
+                    console.log(`[Kiwify Webhook] ✓ E-mail de boas-vindas enviado para: ${email}`);
+                } catch (emailError) {
+                    console.error(`[Kiwify Webhook] ✗ Falha ao enviar e-mail:`, emailError.message);
+                }
             }
-
-            
 
             return res.status(200).json({ status: 'success', message: 'Acesso liberado.' });
-
         }
 
-
-
-        // --- CENÁRIO B: CANCELAMENTOS, ESTORNOS E REEMBOLSOS ---
-
+        // --- CENÁRIO B: CANCELAMENTOS ---
         else if (isCanceled) {
-
             const userExists = await prisma.user.findUnique({ where: { email } });
-
             if (userExists) {
-
                 await prisma.user.update({
-
                     where: { email },
-
                     data: {
-
                         isPremium: false,
-
                         subscriptionStatus: 'CANCELED',
-
                         planId: null
-
                     }
-
                 });
-
-                console.log(`[Kiwify Webhook] Acesso REVOGADO. Status: ${orderStatus}. Usuário: ${email}`);
-
+                console.log(`[Kiwify Webhook] Acesso REVOGADO para: ${email}`);
             }
-
             return res.status(200).json({ status: 'success', message: 'Acesso revogado com sucesso.' });
-
         }
-
-
-
-        // Ignora status que não exigem ação
 
         return res.status(200).json({ received: true, status: 'ignored' });
 
-
-
     } catch (error) {
-
         console.error('[Kiwify Webhook Error Critical]:', error);
-
         return res.status(500).json({ error: 'Webhook processing failed internally' });
-
     }
-
 });
-
-
 
 app.post('/api/auth/register', authLimiter, validateTurnstile, async (req, res) => {
 
@@ -3105,13 +2989,9 @@ app.get('/api/health', async (_req, res) => {
 });
 
 
-
-export { app };
-
-
-
+// ─── Início do Servidor ─────────────────────────────────────────────────────
 app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
 
-    console.log(`Server running on port ${PORT} `);
-
-}); 
+export default app;
