@@ -2,6 +2,65 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+// ─── BLINDAGEM DE NORMALIZAÇÃO ─────────────────────────────────────────────
+
+// Filtro Universal de Áreas (Pega qualquer variação de texto do Front/IA)
+// Filtro Universal de Áreas (Mapeamento Completo ENEM)
+function normalizeArea(rawArea) {
+  if (!rawArea) return 'OUTROS';
+  const upper = String(rawArea).toUpperCase();
+  
+  // 1. LINGUAGENS (Checado primeiro para isolar "Educação Física" e não cair em Natureza)
+  if (
+    upper.includes('LINGUAGEN') || 
+    upper.includes('CÓDIGO') || upper.includes('CODIGO') ||
+    upper.includes('PORTUGUÊS') || upper.includes('PORTUGUES') || 
+    upper.includes('LITERATURA') || 
+    upper.includes('INGLÊS') || upper.includes('INGLES') || 
+    upper.includes('ESPANHOL') || 
+    upper.includes('ARTE') || 
+    upper.includes('EDUCAÇÃO FÍSICA') || upper.includes('EDUCACAO FISICA') ||
+    upper.includes('EDUCAÇÃO') || upper.includes('EDUCACAO') ||
+    upper.includes('TECNOLOGIA DA INFORMAÇÃO') || upper.includes('TECNOLOGIA DA INFORMACAO')
+  ) return 'LINGUAGENS';
+
+  // 2. EXATAS
+  if (
+    upper.includes('EXATA') || 
+    upper.includes('MATEMÁTICA') || upper.includes('MATEMATICA')
+  ) return 'EXATAS';
+
+  // 3. NATUREZA
+  if (
+    upper.includes('NATUREZA') || 
+    upper.includes('FÍSICA') || upper.includes('FISICA') || 
+    upper.includes('QUÍMICA') || upper.includes('QUIMICA') || 
+    upper.includes('BIOLOGIA')
+  ) return 'NATUREZA';
+
+  // 4. HUMANAS
+  if (
+    upper.includes('HUMANA') || 
+    upper.includes('HISTÓRIA') || upper.includes('HISTORIA') || 
+    upper.includes('GEOGRAFIA') || 
+    upper.includes('FILOSOFIA') || 
+    upper.includes('SOCIOLOGIA')
+  ) return 'HUMANAS';
+
+  return 'OUTROS';
+}
+
+// Filtro Universal de Dificuldade
+function normalizeDifficulty(rawDiff) {
+  if (!rawDiff) return 'MEDIUM';
+  const upper = String(rawDiff).toUpperCase();
+  
+  if (upper.includes('HARD') || upper.includes('DIFÍ') || upper.includes('DIFI')) return 'HARD';
+  if (upper.includes('EASY') || upper.includes('FÁCIL') || upper.includes('FACIL')) return 'EASY';
+  
+  return 'MEDIUM';
+}
+
 // ─── 3PL Model (Modelo Logístico de 3 Parâmetros) ──────────────────────────
 export function p3PL(theta, a, b, c) {
   return c + (1 - c) / (1 + Math.exp(-a * (theta - b)));
@@ -11,9 +70,12 @@ export function p3PL(theta, a, b, c) {
 function logLikelihood(responses, theta) {
   let sum = 0;
   for (const r of responses) {
+    // Agora a dificuldade é extraída em segurança
+    const diff = normalizeDifficulty(r.difficulty);
+    
     // Parâmetros simulados baseados na dificuldade da questão
-    const a = r.difficulty === 'HARD' ? 1.5 : (r.difficulty === 'MEDIUM' ? 1.0 : 0.5); // Discriminação
-    const b = r.difficulty === 'HARD' ? 1.5 : (r.difficulty === 'MEDIUM' ? 0.0 : -1.5); // Dificuldade real
+    const a = diff === 'HARD' ? 1.5 : (diff === 'MEDIUM' ? 1.0 : 0.5); // Discriminação
+    const b = diff === 'HARD' ? 1.5 : (diff === 'MEDIUM' ? 0.0 : -1.5); // Dificuldade real
     const c = 0.2; // Taxa de acerto casual (chute - 20% no ENEM com 5 opções)
     
     const p = p3PL(theta, a, b, c);
@@ -63,30 +125,22 @@ export function scoreToBand(score) {
 // ─── API Pública ──────────────────────────────────────────────────────────────
 export async function calculateScore(responses) {
   if (!responses || responses.length === 0) {
-    return { theta: null, score: 0, band: 'Insuficiente' };
+    return { theta: null, score: 0, band: 'Insuficiente', scoresByArea: {} };
   }
 
-  // Agrupar respostas por área de conhecimento
+  // Agrupar respostas por área de conhecimento usando gavetas fixas
   const responsesByArea = {
     HUMANAS: [],
     LINGUAGENS: [],
     NATUREZA: [],
-    EXATAS: []
+    EXATAS: [],
+    OUTROS: [] // Salva-vidas para evitar perda de dados
   };
 
   responses.forEach(r => {
-    // Tratativa para caso o frontend mande o nome em vez do enum, ou não mande area
-    const areaMap = {
-      'Ciências Humanas': 'HUMANAS',
-      'Linguagens': 'LINGUAGENS',
-      'Ciências da Natureza': 'NATUREZA',
-      'Exatas': 'EXATAS'
-    };
-    const mappedArea = areaMap[r.area] || r.area;
-    
-    if (responsesByArea[mappedArea]) {
-      responsesByArea[mappedArea].push(r);
-    }
+    // Transforma "Exatas e Suas Tecnologias" diretamente na chave "EXATAS"
+    const safeArea = normalizeArea(r.area);
+    responsesByArea[safeArea].push(r);
   });
 
   const scoresByArea = {};
@@ -99,12 +153,16 @@ export async function calculateScore(responses) {
       const areaTheta = estimateTheta(areaResponses);
       const areaScore = thetaToScore(areaTheta);
       scoresByArea[area] = areaScore;
-      totalScoreSum += areaScore;
-      areasCount++;
+      
+      // Somamos apenas as áreas principais (para não diluir a nota com a gaveta OUTROS)
+      if (area !== 'OUTROS') {
+          totalScoreSum += areaScore;
+          areasCount++;
+      }
     }
   }
 
-  // A nota final do Simulado é a média aritmética das áreas que o aluno respondeu
+  // A nota final do Simulado é a média aritmética das áreas principais que o aluno respondeu
   const finalScore = areasCount > 0 ? Math.round(totalScoreSum / areasCount) : 0;
   const overallTheta = estimateTheta(responses);
 
@@ -122,9 +180,11 @@ export async function calculateFinalGrade(responses, redacaoScore = 0) {
   
   // Se não houver nota de redação definida, usamos apenas a média das áreas.
   // Se houver, dividimos o total (Soma das Áreas + Redação) por (Número de áreas + 1)
-  const areasTotal = Object.values(triResults.scoresByArea).reduce((a, b) => a + b, 0);
+  const validAreas = Object.keys(triResults.scoresByArea).filter(k => k !== 'OUTROS');
+  const areasTotal = validAreas.reduce((sum, area) => sum + triResults.scoresByArea[area], 0);
+  
   const totalSum = areasTotal + redacaoScore;
-  const divisor = Object.keys(triResults.scoresByArea).length + (redacaoScore > 0 ? 1 : 0);
+  const divisor = validAreas.length + (redacaoScore > 0 ? 1 : 0);
   
   const finalAverage = divisor > 0 ? Math.round(totalSum / divisor) : 0;
   

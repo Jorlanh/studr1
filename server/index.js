@@ -65,14 +65,16 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const PORT = process.env.PORT || 4000;
 
 const JWT_SECRET = process.env.JWT_SECRET || 'studr_secret_key';
+const recentEmailsSent = new Set();
 
-
+// 🛡️ MEMÓRIA ANTI-SPAM PARA WEBHOOKS DUPLICADOS
+const emailsJaEnviados = new Set();
 
 // ─── SMTP CONFIG (Hostinger - Modo Forçado) ───────────────────────────────
 console.log(`[Config] SMTP_HOST: ${process.env.SMTP_HOST}`);
 
 const smtpTransporter = nodemailer.createTransport({
-    host: "smtp.hostinger.com",   // Forçando direto
+    host: "smtp.titan.email",   // Forçando direto
     port: 465,
     secure: true,
     auth: {
@@ -543,20 +545,13 @@ app.post(['/api/webhooks/kiwify', '/api/webhook/kiwify'], webhookLimiter, async 
         const productName = product.product_name || product.productName || payload.product_name || payload.productName || 'Assinatura';
 
 
-
-        console.log(`[Kiwify Webhook] Status: ${orderStatus} | Email: ${email} | Plan/Product ID: ${kiwifyPlanId}`);
-
-
+        console.log(`[Kiwify Webhook] Status lido: ${orderStatus} | Email: ${email} | Plan/Product ID: ${kiwifyPlanId}`);
+        console.log(`[Kiwify RAW BODY]`, JSON.stringify(body, null, 2));
 
         if (!email) {
-
             console.error('[Kiwify Webhook] Payload malformado: E-mail ausente.', JSON.stringify(body));
-
             return res.status(400).json({ error: 'Payload malformado: E-mail ausente.' });
-
         }
-
-
 
         // ----------------------------------------------------------------------
 
@@ -592,15 +587,10 @@ app.post(['/api/webhooks/kiwify', '/api/webhook/kiwify'], webhookLimiter, async 
 
 
 
-        const isPaid = ['paid', 'approved'].includes(orderStatus);
-
+        const isPaid = ['paid', 'approved', 'active', 'completed', 'ativo'].includes(orderStatus);
         const isCanceled = ['refunded', 'chargeback', 'canceled', 'cancelled', 'refund'].includes(orderStatus);
 
-
-
-        // --- CENÁRIO A: COMPRA APROVADA ---
-
-                // --- CENÁRIO A: COMPRA APROVADA ---
+       // --- CENÁRIO A: COMPRA APROVADA ---
         if (isPaid) {
             
             const cleanPhonePassword = rawPhone.replace(/\D/g, '') || Math.random().toString(36).slice(-8);
@@ -609,44 +599,52 @@ app.post(['/api/webhooks/kiwify', '/api/webhook/kiwify'], webhookLimiter, async 
             const subStatus = plan ? plan.accessLevel : 'FULL';
             const cycle = plan ? plan.billingCycle : (productName?.toLowerCase().includes('anual') ? 'YEARLY' : 'MONTHLY');
 
-            let user = await prisma.user.findUnique({ where: { email } });
-            let isNewUser = false;
+            // ⬇️ BLINDAGEM UPSERT (Substitui o if/else antigo) ⬇️
+            const updateData = {
+                isPremium: true,
+                subscriptionStatus: subStatus,
+                billingCycle: cycle,
+                planId: plan?.id || null,
+                lastPaymentDate: new Date(),
+                trialEndsAt: new Date(),
+                isVerified: true
+            };
 
-            if (!user) {
-                isNewUser = true;
-                user = await prisma.user.create({
-                    data: {
+            let user;
+            try {
+                // O Upsert resolve a "Race Condition" nativamente
+                user = await prisma.user.upsert({
+                    where: { email },
+                    update: updateData,
+                    create: {
                         email,
                         name: fullName,
                         password: hashedPassword,
-                        isPremium: true,
-                        subscriptionStatus: subStatus,
-                        billingCycle: cycle,
-                        planId: plan?.id || null,
-                        lastPaymentDate: new Date(),
-                        trialEndsAt: new Date(),
-                        isVerified: true
+                        ...updateData
                     }
                 });
-                console.log(`[Kiwify Webhook] Novo usuário criado e liberado: ${email}`);
-            } else {
-                await prisma.user.update({
-                    where: { email },
-                    data: {
-                        isPremium: true,
-                        subscriptionStatus: subStatus,
-                        billingCycle: cycle,
-                        planId: plan?.id || null,
-                        lastPaymentDate: new Date(),
-                        trialEndsAt: new Date(),
-                        isVerified: true
-                    }
-                });
-                console.log(`[Kiwify Webhook] Usuário existente atualizado: ${email}`);
+                console.log(`[Kiwify Webhook] Conta de aluno sincronizada com sucesso: ${email}`);
+            } catch (err) {
+                // Se a Kiwify atirar duas vezes no exato milissegundo, forçamos o update como fallback
+                if (err.code === 'P2002') {
+                    user = await prisma.user.update({ where: { email }, data: updateData });
+                    console.log(`[Kiwify Webhook] Concorrência resolvida e aluno atualizado: ${email}`);
+                } else {
+                    throw err; // Se for outro erro, grita
+                }
             }
+            // ⬆️ FIM DA BLINDAGEM ⬆️
 
-            // === ENVIO DE E-MAIL DE BOAS-VINDAS ===
-            if (isNewUser) {
+           // === ENVIO DE E-MAIL DE BOAS-VINDAS (BLINDAGEM DE 15 MINUTOS) ===
+            if (!emailsJaEnviados.has(email)) {
+                
+                // 1. Trava o e-mail para bloquear os tiros da Kiwify
+                emailsJaEnviados.add(email);
+                
+                // 2. Destrava após 15 minutos (900.000 milissegundos)
+                setTimeout(() => emailsJaEnviados.delete(email), 900000); 
+
+                // 3. Monta o e-mail
                 const planName = plan ? plan.name : productName || 'Plano Premium';
                 const firstName = fullName.split(' ')[0] || 'Aluno';
 
@@ -669,17 +667,15 @@ app.post(['/api/webhooks/kiwify', '/api/webhook/kiwify'], webhookLimiter, async 
                     </div>
                 `;
 
+                // 🔥 DISPARO PELO ROTEADOR HÍBRIDO (Hostinger -> Resend Fallback)
                 try {
-                    await resend.emails.send({
-                        from: "Studr <onboarding@resend.dev>",
-                        to: email,
-                        subject: `⚡ Seu acesso ao Studr está liberado!`,
-                        html: htmlTemplate
-                    });
-                    console.log(`[Kiwify Webhook] ✓ E-mail de boas-vindas enviado para: ${email}`);
+                    await sendEmailHybrid(email, '⚡ Seu acesso ao Studr está liberado!', htmlTemplate);
+                    console.log(`[Kiwify Webhook] ✓ E-mail de boas-vindas enviado com sucesso para: ${email}`);
                 } catch (emailError) {
-                    console.error(`[Kiwify Webhook] ✗ Falha ao enviar e-mail:`, emailError.message);
+                    console.error(`[Kiwify Webhook] ✗ Falha no roteador de e-mail:`, emailError.message);
                 }
+            } else {
+                console.log(`[Kiwify Webhook] 🛡️ E-mail repetido da Kiwify ignorado: ${email}`);
             }
 
             return res.status(200).json({ status: 'success', message: 'Acesso liberado.' });

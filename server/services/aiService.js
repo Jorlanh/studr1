@@ -491,7 +491,7 @@ export const generateStudyMap = async (subject, topic) => {
 };
 
 // 🚨 SOLUÇÃO PARA O ERRO DO TUTOR IA: 
-// 1. Forçado modelo Gemini por ser o único ativo.
+// 1. Forçado modelo Groq (Llama) por ser ultra-rápido.
 // 2. Tempo de timeout estendido enormemente para evitar corte prematuro.
 export const getChatResponse = async (history, newMessage) => {
     const messages = [
@@ -499,6 +499,6 @@ export const getChatResponse = async (history, newMessage) => {
         ...history.map(msg => ({ role: msg.role === 'user' ? 'user' : 'assistant', content: msg.text })),
         { role: "user", content: newMessage }
     ];
-    // Usa 'gemini' como forceProvider e 60000ms de timeout para garantir que responde sempre
-    return await executeHybridAI(messages, false, 2, 60000, 'gemini');
+    // Usa 'groq' como forceProvider e 60000ms de timeout para garantir que responde sempre
+    return await executeHybridAI(messages, false, 2, 60000, 'groq');
 };

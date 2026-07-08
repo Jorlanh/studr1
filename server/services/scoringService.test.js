@@ -2,20 +2,11 @@
  * scoringService.test.js
  * ----------------------
  * Unit tests for the 3PL TRI scoring engine.
- * Prisma is mocked via server/test/setup.js — no real DB calls.
+ * O motor matemático agora é puro e autossuficiente (sem necessidade de mock do Prisma).
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { p3PL, thetaToScore, scoreToBand, calculateScore } from './scoringService.js';
-import { CALIBRATIONS } from '../test/setup.js';
-
-// ─── Pull the mocked prisma out for per-test configuration ────────────────────
-const { _mock: prismaMock } = await import('@prisma/client');
-
-beforeEach(() => {
-  vi.clearAllMocks();
-  prismaMock.questionCalibration.findMany.mockResolvedValue(Object.values(CALIBRATIONS));
-});
 
 // ─── p3PL ─────────────────────────────────────────────────────────────────────
 
@@ -59,24 +50,20 @@ describe('thetaToScore', () => {
     expect(thetaToScore(0)).toBe(500);
   });
 
-  it('θ=-2 → 300 (mínimo, clampado)', () => {
+  it('θ=-2 → 300 (calculado: 500 - 200)', () => {
     expect(thetaToScore(-2)).toBe(300);
   });
 
-  it('θ=2 → 700', () => {
+  it('θ=2 → 700 (calculado: 500 + 200)', () => {
     expect(thetaToScore(2)).toBe(700);
   });
 
-  it('θ=4 → 900 (máximo, clampado)', () => {
-    expect(thetaToScore(4)).toBe(900);
+  it('θ=-10 clampado a 0 (novo padrão do sistema)', () => {
+    expect(thetaToScore(-10)).toBe(0);
   });
 
-  it('θ=-10 clampado a 300', () => {
-    expect(thetaToScore(-10)).toBe(300);
-  });
-
-  it('θ=10 clampado a 900', () => {
-    expect(thetaToScore(10)).toBe(900);
+  it('θ=10 clampado a 1000 (novo padrão do sistema)', () => {
+    expect(thetaToScore(10)).toBe(1000);
   });
 });
 
@@ -84,7 +71,7 @@ describe('thetaToScore', () => {
 
 describe('scoreToBand', () => {
   it.each([
-    [300, 'Insuficiente'],
+    [0, 'Insuficiente'],
     [399, 'Insuficiente'],
     [400, 'Em desenvolvimento'],
     [549, 'Em desenvolvimento'],
@@ -95,6 +82,7 @@ describe('scoreToBand', () => {
     [800, 'Excelente'],
     [899, 'Excelente'],
     [900, 'Elite'],
+    [1000, 'Elite'],
   ])('score %i → faixa "%s"', (score, expected) => {
     expect(scoreToBand(score)).toBe(expected);
   });
@@ -103,39 +91,40 @@ describe('scoreToBand', () => {
 // ─── calculateScore ───────────────────────────────────────────────────────────
 
 describe('calculateScore', () => {
-  it('array vazio retorna nota mínima (300)', async () => {
+  it('array vazio retorna nota mínima da nova arquitetura (0)', async () => {
     const { score, band } = await calculateScore([]);
-    expect(score).toBe(300);
+    expect(score).toBe(0);
     expect(band).toBe('Insuficiente');
   });
 
-  it('null/undefined retorna nota mínima', async () => {
+  it('null/undefined retorna nota mínima (0)', async () => {
     const { score } = await calculateScore(null);
-    expect(score).toBe(300);
+    expect(score).toBe(0);
   });
 
-  it('ignora questões com difficulty desconhecida, não quebra', async () => {
+  it('ignora questões com difficulty desconhecida, trata como MEDIUM e não quebra', async () => {
+    // Adicionamos 'area: EXATAS' para garantir que não cai no air-bag 'OUTROS'
     const { score } = await calculateScore([
-      { difficulty: 'UNKNOWN', correct: true },
-      { difficulty: 'MEDIUM',  correct: true },
+      { difficulty: 'UNKNOWN', correct: true, area: 'EXATAS' },
+      { difficulty: 'MEDIUM',  correct: true, area: 'EXATAS' },
     ]);
-    expect(score).toBeGreaterThan(300);
+    expect(score).toBeGreaterThan(0);
   });
 
   it('acertar tudo (HARD) dá nota alta (>= 700)', async () => {
-    const responses = Array(45).fill({ difficulty: 'HARD', correct: true });
+    const responses = Array(45).fill({ difficulty: 'HARD', correct: true, area: 'EXATAS' });
     const { score } = await calculateScore(responses);
     expect(score).toBeGreaterThanOrEqual(700);
   });
 
   it('errar tudo (EASY) dá nota baixa (<=500)', async () => {
-    const responses = Array(45).fill({ difficulty: 'EASY', correct: false });
+    const responses = Array(45).fill({ difficulty: 'EASY', correct: false, area: 'NATUREZA' });
     const { score } = await calculateScore(responses);
     expect(score).toBeLessThanOrEqual(500);
   });
 
   it('nota é determinística para o mesmo input', async () => {
-    const responses = Array(45).fill({ difficulty: 'MEDIUM', correct: true });
+    const responses = Array(45).fill({ difficulty: 'MEDIUM', correct: true, area: 'HUMANAS' });
     const [a, b, c] = await Promise.all([
       calculateScore(responses),
       calculateScore(responses),
@@ -145,23 +134,14 @@ describe('calculateScore', () => {
     expect(b.score).toBe(c.score);
   });
 
-  it('fallback heurístico quando calibrações não existem', async () => {
-    prismaMock.questionCalibration.findMany.mockResolvedValueOnce([]);
-    const responses = Array(45).fill({ difficulty: 'MEDIUM', correct: true });
-    const { score } = await calculateScore(responses);
-    // Fallback usa porcentagem bruta; não deve quebrar e deve ser >= 300
-    expect(score).toBeGreaterThanOrEqual(300);
-    expect(score).toBeLessThanOrEqual(900);
-  });
-
   it('theta retornado para acertar tudo (MEDIUM) é maior que 0', async () => {
-    const responses = Array(45).fill({ difficulty: 'MEDIUM', correct: true });
+    const responses = Array(45).fill({ difficulty: 'MEDIUM', correct: true, area: 'LINGUAGENS' });
     const { theta } = await calculateScore(responses);
     expect(theta).toBeGreaterThan(0);
   });
 
   it('theta retornado para errar tudo (MEDIUM) é menor que 0', async () => {
-    const responses = Array(45).fill({ difficulty: 'MEDIUM', correct: false });
+    const responses = Array(45).fill({ difficulty: 'MEDIUM', correct: false, area: 'EXATAS' });
     const { theta } = await calculateScore(responses);
     expect(theta).toBeLessThan(0);
   });
