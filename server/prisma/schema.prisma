@@ -39,6 +39,8 @@ model User {
   trialQuestionsDate    String?           // YYYY-MM-DD of current daily counter window
   trialQuestionsUsed    Int               @default(0)
   currentLeague         String            @default("BRONZE")
+  simuladosQuota Int @default(0)
+  triQuota       Int @default(0)
   
   // Relacionamentos Existentes
   exams                 Exam[]

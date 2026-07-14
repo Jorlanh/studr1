@@ -210,10 +210,16 @@ Sua missão é gerar um ROADMAP (Trilha de Estudos) sequencial e lógico para o 
 A trilha deve organizar O QUE estudar e em QUAL ORDEM estudar, do básico ao avançado.
 Retorne APENAS JSON estruturado, sem texto ou formatação fora do JSON.`;
 
+// Adicione esta função ao seu arquivo apiService.ts
+export const fetchReviewErrors = async (specificTopic?: string, limit = 5) => {
+  return await apiRequest('/practice/review-errors', 'POST', { specificTopic, limit });
+};
+
 // ==========================================
 // 🚀 ENDPOINTS DA API
 // ==========================================
 
+// No seu arquivo aiService.js, modifique a função generateQuestionBatch
 export const generateQuestionBatch = async (area, requestedCount = 1, specificTopic, excludeTopics = [], isReviewErrors = false) => {
     const count = Math.min(requestedCount, 5); 
 
@@ -224,15 +230,24 @@ export const generateQuestionBatch = async (area, requestedCount = 1, specificTo
     const areaLabel = area === 'Todas as Áreas' ? "diversas matérias do ENEM" : area;
 
     let contentPrompt = "";
-    if (isReviewErrors) {
-        contentPrompt = `Gere ${count} questões ENEM sobre pegadinhas comuns em ${areaLabel}.${exclusionPrompt}`;
+    let exactSubjectInstruction = `"Matéria Específica (ex: Botânica, Geopolítica)"`; 
+
+    if (isReviewErrors && specificTopic && specificTopic.trim() !== "") {
+        contentPrompt = `Gere ${count} questões ENEM focadas em corrigir os erros do aluno sobre o tópico específico "${specificTopic}" em ${areaLabel}.${exclusionPrompt}`;
+        exactSubjectInstruction = `"${specificTopic}"`; 
+    } else if (isReviewErrors) {
+        contentPrompt = `Gere ${count} questões ENEM sobre pegadinhas e erros comuns em ${areaLabel}.${exclusionPrompt}`;
     } else if (specificTopic && specificTopic.trim() !== "") {
         contentPrompt = `Gere ${count} questões ENEM sobre "${specificTopic}".${exclusionPrompt}`;
+        exactSubjectInstruction = `"${specificTopic}"`; 
     } else {
         contentPrompt = `Gere ${count} questões ENEM inéditas de ${areaLabel}. Variedade alta.${exclusionPrompt}`;
     }
 
+    // 🔥 INCREMENTO: Instrução clara para forçar a diversidade de dificuldade no JSON
     const prompt = `${contentPrompt}
+OBRIGATÓRIO: Variar o nível das questões. Se gerar 5 questões, gere 2 fáceis, 2 médias e 1 difícil.
+
 Retorne SOMENTE um JSON com a chave "questions" contendo um array de exatos ${count} objetos. Estrutura exigida:
 { 
   "stem": "Comando direto da questão", 
@@ -245,9 +260,9 @@ Retorne SOMENTE um JSON com a chave "questions" contendo um array de exatos ${co
     "Descreva o quarto cenário incorreto de forma completa e profunda"
   ], 
   "correctIndex": 2, 
-  "subject": "Matéria Específica", 
+  "subject": ${exactSubjectInstruction}, 
   "area": "Área do conhecimento", 
-  "difficulty": "EASY|MEDIUM|HARD", 
+  "difficulty": "EASY", // ESCOLHA EXATAMENTE UM DESTA LISTA: "EASY", "MEDIUM", "HARD"
   "explanation": "Justificativa minuciosa do gabarito" 
 }`;
 

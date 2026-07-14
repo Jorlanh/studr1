@@ -467,83 +467,45 @@ app.post('/api/payments/create-checkout', authenticateToken, async (req, res) =>
 
 
 // ==========================================
-
 // 🛒 WEBHOOK KIWIFY (Blindado - Segurança de Nível Militar)
-
 // ==========================================
 
 app.post(['/api/webhooks/kiwify', '/api/webhook/kiwify'], webhookLimiter, async (req, res) => {
-
     try {
-
         // ----------------------------------------------------------------------
-
         // 🛡️ CAMADA 1: BLINDAGEM DE AUTENTICAÇÃO E PREVENÇÃO DE SPOOFING
-
         // ----------------------------------------------------------------------
-
         const token = req.query.token;
-
         const expectedToken = process.env.KIWIFY_TOKEN || process.env.KIWIFY_WEBHOOK_SECRET;
-
         
-
         // Proteção contra Timing Attacks usando comparação de strings segura
-
         if (expectedToken && token !== expectedToken) {
-
             console.warn(`[SECURITY:Webhook] Tentativa de invasão bloqueada. Token inválido. IP: ${req.ip}`);
-
             return res.status(403).json({ error: 'Acesso negado. Assinatura inválida.' });
-
         }
 
-
-
         // ----------------------------------------------------------------------
-
         // 🧹 CAMADA 2: HIGIENIZAÇÃO E EXTRAÇÃO DE PAYLOAD
-
         // ----------------------------------------------------------------------
-
         const body = req.body;
-
         // Suporta tanto payloads planos quanto envelopados em "data"
-
         const payload = body.data ? body.data : body;
 
-
-
         const orderStatus = (payload.order_status || payload.orderStatus || payload.Order_Status || payload.status || '').toLowerCase().trim();
-
         
-
         // Tolerância a case-sensitivity (Kiwify manda Customer ou customer)
-
         const customer = payload.Customer || payload.customer || {};
-
         const product = payload.Product || payload.product || {};
-
         const subscription = payload.Subscription || payload.subscription || payload.Assinatura || payload.assinatura || {};
 
-
-
         const email = normalizeEmail(customer.email || payload.email || payload.customer_email);
-
         const fullName = customer.full_name || customer.first_name || payload.name || payload.customer_name || 'Estudante';
-
         const rawPhone = customer.mobile || customer.phone || payload.phone || '';
-
         
-
         const productId = product.product_id || product.productId || payload.product_id || payload.productId;
-
         const subscriptionPlanId = typeof subscription === 'string' ? subscription : (subscription.plan_id || subscription.planId || subscription.id || subscription.product_id || subscription.productId);
-
         const kiwifyPlanId = subscriptionPlanId || productId;
-
         const productName = product.product_name || product.productName || payload.product_name || payload.productName || 'Assinatura';
-
 
         console.log(`[Kiwify Webhook] Status lido: ${orderStatus} | Email: ${email} | Plan/Product ID: ${kiwifyPlanId}`);
         console.log(`[Kiwify RAW BODY]`, JSON.stringify(body, null, 2));
@@ -554,38 +516,21 @@ app.post(['/api/webhooks/kiwify', '/api/webhook/kiwify'], webhookLimiter, async 
         }
 
         // ----------------------------------------------------------------------
-
         // ⚙️ CAMADA 3: MÁQUINA DE ESTADO E LÓGICA DE NEGÓCIO
-
         // ----------------------------------------------------------------------
-
         
-
         // Busca flexível no banco de dados para vincular o plano
-
         let plan = null;
-
         if (kiwifyPlanId) {
-
             plan = await prisma.plan.findFirst({
-
                 where: {
-
                     OR: [
-
                         { kiwifyProductId: String(kiwifyPlanId) },
-
                         { kiwifyProductId: String(productId) }
-
                     ]
-
                 }
-
             });
-
         }
-
-
 
         const isPaid = ['paid', 'approved', 'active', 'completed', 'ativo'].includes(orderStatus);
         const isCanceled = ['refunded', 'chargeback', 'canceled', 'cancelled', 'refund'].includes(orderStatus);
@@ -596,10 +541,12 @@ app.post(['/api/webhooks/kiwify', '/api/webhook/kiwify'], webhookLimiter, async 
             const cleanPhonePassword = rawPhone.replace(/\D/g, '') || Math.random().toString(36).slice(-8);
             const hashedPassword = await bcrypt.hash(cleanPhonePassword, 10);
 
-            const subStatus = plan ? plan.accessLevel : 'FULL';
+            // 🔥 IDENTIFICA SE O PLANO É SIMULADO
+            const isSimulado = productName?.toLowerCase().includes('simulado') || (plan && plan.accessLevel === 'SIMULADO');
+            const subStatus = isSimulado ? 'SIMULADO' : (plan ? plan.accessLevel : 'FULL');
             const cycle = plan ? plan.billingCycle : (productName?.toLowerCase().includes('anual') ? 'YEARLY' : 'MONTHLY');
 
-            // ⬇️ BLINDAGEM UPSERT (Substitui o if/else antigo) ⬇️
+            // ⬇️ BLINDAGEM UPSERT COM AS COTAS INJETADAS ⬇️
             const updateData = {
                 isPremium: true,
                 subscriptionStatus: subStatus,
@@ -607,7 +554,9 @@ app.post(['/api/webhooks/kiwify', '/api/webhook/kiwify'], webhookLimiter, async 
                 planId: plan?.id || null,
                 lastPaymentDate: new Date(),
                 trialEndsAt: new Date(),
-                isVerified: true
+                isVerified: true,
+                simuladosQuota: isSimulado ? 1 : 9999, // <-- COTA INJETADA
+                triQuota: isSimulado ? 1 : 9999        // <-- COTA INJETADA
             };
 
             let user;
@@ -633,7 +582,6 @@ app.post(['/api/webhooks/kiwify', '/api/webhook/kiwify'], webhookLimiter, async 
                     throw err; // Se for outro erro, grita
                 }
             }
-            // ⬆️ FIM DA BLINDAGEM ⬆️
 
            // === ENVIO DE E-MAIL DE BOAS-VINDAS (BLINDAGEM DE 15 MINUTOS) ===
             if (!emailsJaEnviados.has(email)) {
@@ -690,7 +638,9 @@ app.post(['/api/webhooks/kiwify', '/api/webhook/kiwify'], webhookLimiter, async 
                     data: {
                         isPremium: false,
                         subscriptionStatus: 'CANCELED',
-                        planId: null
+                        planId: null,
+                        simuladosQuota: 0, // <-- ZERA COTA AQUI
+                        triQuota: 0        // <-- ZERA COTA AQUI
                     }
                 });
                 console.log(`[Kiwify Webhook] Acesso REVOGADO para: ${email}`);
@@ -707,88 +657,46 @@ app.post(['/api/webhooks/kiwify', '/api/webhook/kiwify'], webhookLimiter, async 
 });
 
 app.post('/api/auth/register', authLimiter, validateTurnstile, async (req, res) => {
-
     try {
-
         const email = normalizeEmail(req.body.email);
-
         const { name, password, referralId, referralSource } = req.body;
 
-
-
         if (!email || !password) {
-
             return res.status(400).json({ error: 'Email e senha são obrigatórios.' });
-
         }
-
-
 
         const existingUser = await prisma.user.findUnique({ where: { email } });
-
         if (existingUser) {
-
             return res.status(400).json({ error: 'Email já cadastrado.' });
-
         }
 
-
-
         const hashedPassword = await bcrypt.hash(password, 10);
-
         const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
 
-
-
         const trialEndsAt = new Date();
-
         trialEndsAt.setDate(trialEndsAt.getDate() + 7);
 
-
-
         const user = await prisma.user.create({
-
             data: {
-
                 email,
-
                 name,
-
                 password: hashedPassword,
-
                 verificationCode,
-
                 referralId,
-
                 referralSource,
-
                 trialEndsAt
-
             }
-
         });
 
-
-
         const html = `<p>Olá ${name || ''}, seu código para começar o trial de 7 dias é: <strong>${verificationCode}</strong></p>`;
-
         sendEmailHybrid(email, 'Seu código de verificação Studr', html);
 
-
-
         res.status(201).json({ message: 'Usuário criado. Verifique seu e-mail.', userId: user.id });
-
     } catch (error) {
-
         console.error(error);
-
         res.status(500).json({ error: 'Erro ao registrar usuário.' });
-
     }
-
 });
-
-
 
 app.post('/api/auth/register-affiliate', async (req, res) => {
 
@@ -967,17 +875,24 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 
 
         const TEST_EMAILS = ['trial@studr.com.br', 'premium@studr.com.br', 'simulado@studr.com.br', 'admin@studr.com.br'];
+        
+        // Conversão para minúsculas: previne falhas se o utilizador escrever Premium@studr.com.br
+        const isTestAccount = TEST_EMAILS.includes(String(user.email).toLowerCase());
 
-        if (!fingerprint || TEST_EMAILS.includes(user.email) || String(user.role).toUpperCase() === 'ADMIN') {
+        if (!fingerprint || isTestAccount || String(user.role).toUpperCase() === 'ADMIN') {
+            
+            // Em vez de gerar um novo, recuperamos o token atual da base de dados
+            let sessionToken = user.sessionToken;
 
-            const sessionToken = randomUUID();
-
-            await prisma.user.update({ where: { id: user.id }, data: { sessionToken } });
+            // Só geramos um NOVO token se for um Admin para proteger a sua conta
+            // ou se a conta de teste ainda não tiver nenhum token gerado.
+            if (!sessionToken || !isTestAccount) {
+                sessionToken = randomUUID();
+                await prisma.user.update({ where: { id: user.id }, data: { sessionToken } });
+            }
 
             const token = jwt.sign({ userId: user.id, sessionToken }, JWT_SECRET);
-
             return res.json({ token, user: buildUserPayload(user) });
-
         }
 
 
@@ -1537,40 +1452,24 @@ app.get('/api/premium/features', authenticateToken, async (req, res) => {
 
 
 function buildUserPayload(user) {
-
     const trialEndsAt = user.trialEndsAt ? new Date(user.trialEndsAt) : null;
 
     return {
-
         id: user.id,
-
         email: user.email,
-
         name: user.name,
-
         role: user.role,
-
         affiliateStatus: user.affiliateStatus,
-
         xp: user.xp,
-
         level: user.level,
-
         isPremium: user.isPremium,
-
         subscriptionStatus: user.subscriptionStatus,
-
+        simuladosQuota: user.simuladosQuota, // <-- ADICIONADO E LIMPO
+        triQuota: user.triQuota,             // <-- ADICIONADO E LIMPO
         trialEndsAt: user.trialEndsAt,
-
         trialActive: user.isPremium ? false : (trialEndsAt ? new Date() < trialEndsAt : false)
-
     };
-
 }
-
-
-
-
 
 // Admin Routes
 
@@ -2304,7 +2203,16 @@ app.post('/api/exams/:id/finalize', authenticateToken, async (req, res) => {
 
         if (exam.finalizedAt) return res.status(400).json({ error: 'Simulado já finalizado.' });
 
-
+        const user = await prisma.user.findUnique({ where: { id: userId } });
+        
+        // Verifica a cota de TRI para quem é SIMULADO
+        if (user.subscriptionStatus === 'SIMULADO') {
+            if (user.triQuota <= 0) {
+                return res.status(403).json({ error: 'Sua cota mensal de cálculos TRI foi atingida. Assine o plano completo.' });
+            }
+            // Desconta a cota de TRI
+            await prisma.user.update({ where: { id: userId }, data: { triQuota: { decrement: 1 } } });
+        }
 
         const { responses, redacaoScore } = req.body;
 
@@ -2680,123 +2588,164 @@ if (process.env.TEST !== '1') {
 
 
 
-const DIFFICULTY_KEY = { 'Fácil': 'FÁCIL', 'Média': 'MÉDIA', 'Difícil': 'DIFÍCIL' };
-
-
+const DIFFICULTY_KEY = { 
+    'Fácil': 'EASY', 'EASY': 'EASY', 'easy': 'EASY',
+    'Média': 'MEDIUM', 'MEDIUM': 'MEDIUM', 'medium': 'MEDIUM',
+    'Difícil': 'HARD', 'HARD': 'HARD', 'hard': 'HARD' 
+};
 
 // AI Routes
-
 app.post('/api/ai/generate-questions', authenticateToken, async (req, res) => {
-
     try {
-
+        // EXTRAIR PRIMEIRO:
         const { area, count, specificTopic, excludeTopics, isReviewErrors, inMock, examId } = req.body;
 
-
+        // VERIFICAR DEPOIS:
+        const user = await prisma.user.findUnique({ where: { id: req.user.userId } });
+        if (user.subscriptionStatus === 'SIMULADO' && !inMock) {
+            return res.status(403).json({ error: 'O Gerador de Questões é bloqueado no Plano Simulado. Faça Upgrade.' });
+        }
 
         if (E2E_MODE) {
-
             const stub = Array.from({ length: count || 1 }, (_, i) => ({
-
                 id: `e2e-${area}-${i}`,
-
                 stem: `[E2E] Questão ${i + 1} de ${area}`,
-
                 options: ['Alternativa A', 'Alternativa B', 'Alternativa C', 'Alternativa D', 'Alternativa E'],
-
                 correctIndex: 0,
-
                 subject: specificTopic || area,
-
-                difficulty: 'MÉDIA',
-
+                difficulty: 'MEDIUM', // Mudado de MÉDIA para MEDIUM
                 area: area || 'EXATAS',
-
                 explanation: '[E2E] Explicação de teste — alternativa A está correta.',
-
             }));
-
             return res.json(stub);
-
         }
-
-
 
         if (!inMock) {
-
             const check = await checkAndConsumeQuestion(req.user.userId, count || 1);
-
             if (!check.allowed) {
-
                 console.warn(`[Plan] Bloqueado | userId: ${req.user.userId} | reason: ${check.reason}`);
-
                 return res.status(403).json({ error: check.reason, details: check });
-
             }
-
         }
 
+// ==========================================
+// 🚀 ENDPOINT DE REVISÃO DE ERROS PASSADOS (DIRETO DO BANCO)
+// ==========================================
+app.post('/api/practice/review-errors', authenticateToken, async (req, res) => {
+    try {
+        const { specificTopic, limit = 5 } = req.body;
+        const userId = req.user.userId;
 
+        console.log(`[Review] Buscando erros passados no BD para o usuário: ${userId} | Tópico: ${specificTopic || 'TODOS'}`);
+
+        // Filtro para buscar as questões que o aluno errou no histórico
+        const whereClause = {
+            exam: { userId: userId },
+            isCorrect: false,
+            userAnswer: { not: null }, // Garante que foi respondida e errada de fato
+        };
+
+        // 🔥 BLINDAGEM: Busca exata mas ignorando maiúsculas e minúsculas
+        if (specificTopic && specificTopic.trim() !== "") {
+            whereClause.subject = {
+                equals: specificTopic.trim(),
+                mode: 'insensitive'
+            };
+        }
+
+        // Procura na tabela de ExamQuestion do Prisma
+        const missedQuestions = await prisma.examQuestion.findMany({
+            where: whereClause,
+            include: { exam: true },
+            orderBy: { answeredAt: 'desc' },
+            take: Number(limit)
+        });
+
+        // Se não achou erros, avisa o front para não abrir a tela de Quiz vazia
+        if (missedQuestions.length === 0) {
+            return res.json({ 
+                ok: true, 
+                questions: [], 
+                message: specificTopic 
+                    ? `Excelente! Você não possui erros registrados no tópico "${specificTopic}".` 
+                    : 'Parabéns! Você não tem erros pendentes.' 
+            });
+        }
+
+        // Formata o retorno para a estrutura exata que o QuizScreen.tsx espera ler
+        const formattedQuestions = missedQuestions.map(mq => {
+            const qData = mq.questionJson || {};
+            return {
+                id: mq.id,
+                stem: qData.stem || 'Comando da questão',
+                context: qData.context || '',
+                options: qData.options || [],
+                correctIndex: mq.correctAnswer,
+                subject: mq.subject,
+                area: mq.exam.area,
+                difficulty: mq.difficulty,
+                explanation: qData.explanation || 'Revise o feedback e tente novamente.',
+                isReview: true // Identificador de sessão de erro
+            };
+        });
+
+        return res.json({ ok: true, questions: formattedQuestions });
+
+    } catch (error) {
+        console.error('[Backend:ReviewErrors] Erro crítico:', error);
+        return res.status(500).json({ error: 'Erro interno ao recuperar histórico de erros.' });
+    }
+});
 
         const start = Date.now();
-
         console.log(`[AI] Gerando ${count} questão(ões) | área: ${area} | tópico: ${specificTopic || 'geral'} | review: ${!!isReviewErrors} | inMock: ${!!inMock}`);
 
         const questions = await aiService.generateQuestionBatch(area, count, specificTopic, excludeTopics, isReviewErrors);
 
         console.log(`[AI] ✓ ${questions.length} questão(ões) gerada(s) em ${Date.now() - start}ms`);
 
-
-
-        if (examId && questions.length > 0) {
-
-            try {
-
-                const startIndex = await prisma.examQuestion.count({ where: { examId } });
-
-                const rows = questions.map((q, i) => ({
-
-                    examId,
-
-                    orderIndex: startIndex + i,
-
-                    questionJson: q,
-
-                    subject: q.subject || '',
-
-                    difficulty: DIFFICULTY_KEY[q.difficulty] || 'MÉDIA',
-
-                    correctAnswer: q.correctIndex ?? 0,
-
-                    isCorrect: false,
-
-                }));
-
-                await prisma.examQuestion.createMany({ data: rows });
-
-            } catch (dbErr) {
-
-                console.warn('[AI] Falha ao persistir ExamQuestion:', dbErr?.message);
-
+        // 🔥 GARANTIA ABSOLUTA DA DIFICULDADE (NORMALIZAÇÃO PARA EASY, MEDIUM, HARD)
+        const normalizedQuestions = questions.map(q => {
+            const diffRaw = q.difficulty ? String(q.difficulty).toUpperCase().trim() : 'MEDIUM';
+            let finalDifficulty = 'MEDIUM'; // Fallback seguro
+            
+            if (diffRaw.includes('EASY') || diffRaw.includes('FÁCIL') || diffRaw.includes('FACIL')) {
+                finalDifficulty = 'EASY';
+            } else if (diffRaw.includes('HARD') || diffRaw.includes('DIFÍ') || diffRaw.includes('DIFI')) {
+                finalDifficulty = 'HARD';
             }
+            
+            return {
+                ...q,
+                difficulty: finalDifficulty
+            };
+        });
 
+        // SALVAMENTO NO BANCO SE FOR SIMULADO/TORRE
+        if (examId && normalizedQuestions.length > 0) {
+            try {
+                const startIndex = await prisma.examQuestion.count({ where: { examId } });
+                const rows = normalizedQuestions.map((q, i) => ({
+                    examId,
+                    orderIndex: startIndex + i,
+                    questionJson: q,
+                    subject: q.subject || '',
+                    difficulty: q.difficulty, // Vai salvar estritamente EASY, MEDIUM ou HARD
+                    correctAnswer: q.correctIndex ?? 0,
+                    isCorrect: false,
+                }));
+                await prisma.examQuestion.createMany({ data: rows });
+            } catch (dbErr) {
+                console.warn('[AI] Falha ao persistir ExamQuestion:', dbErr?.message);
+            }
         }
 
-
-
-        res.json(questions);
-
+        res.json(normalizedQuestions);
     } catch (error) {
-
         console.error(`[AI] ✗ Erro após ${Date.now()}ms:`, error);
-
         res.status(500).json({ error: 'Erro ao gerar questões.' });
-
     }
-
 });
-
-
 
 app.post('/api/ai/analyze-sisu', authenticateToken, async (req, res) => {
 
@@ -2866,6 +2815,11 @@ app.post('/api/ai/evaluate-essay', authenticateToken, async (req, res) => {
 
     try {
 
+        const user = await prisma.user.findUnique({ where: { id: req.user.userId } });
+        if (user.subscriptionStatus === 'SIMULADO') {
+            return res.status(403).json({ error: 'Correção de redação bloqueada no Plano Simulado. Faça upgrade.' });
+        }
+
         const { theme, essayText } = req.body;
 
         if (typeof essayText !== 'string' || essayText.length > 10000) {
@@ -2894,6 +2848,11 @@ app.post('/api/ai/chat', authenticateToken, async (req, res) => {
 
     try {
 
+        const user = await prisma.user.findUnique({ where: { id: req.user.userId } });
+        if (user.subscriptionStatus === 'SIMULADO') {
+            return res.status(403).json({ error: 'Tutor IA bloqueado no Plano Simulado. Faça upgrade.' });
+        }
+
         const { history, newMessage } = req.body;
 
         if (typeof newMessage !== 'string' || newMessage.length > 2000) {
@@ -2919,29 +2878,26 @@ app.post('/api/ai/chat', authenticateToken, async (req, res) => {
 
 
 app.post('/api/ai/study-map', authenticateToken, async (req, res) => {
-
     console.log('Route: /api/ai/study-map hit', req.body);
-
     try {
+        // 🔥 BARREIRA HARD: Apenas usuários Premium (Mensal/Anual) têm acesso.
+        const user = await prisma.user.findUnique({ where: { id: req.user.userId } });
+        
+        // Verifica se é plano SIMULADO ou TRIAL
+        if (user.subscriptionStatus === 'SIMULADO' || user.subscriptionStatus === 'TRIAL' || !user.isPremium) {
+            return res.status(403).json({ error: 'Os Mapas de Estudo são exclusivos dos Planos Mensal e Anual. Faça upgrade.' });
+        }
 
         const { subject, topic } = req.body;
-
         console.log(`Generating study map for: ${subject} - ${topic}`);
-
+        
         const map = await aiService.generateStudyMap(subject, topic);
-
         console.log('Study map generated successfully');
-
         res.json(map);
-
     } catch (error) {
-
         console.error('Erro ao gerar mapa de estudos:', error);
-
         res.status(500).json({ error: 'Erro ao gerar mapa de estudos.' });
-
     }
-
 });
 
 
