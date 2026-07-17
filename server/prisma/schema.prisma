@@ -185,6 +185,7 @@ model UserXp {
   level        Int      @default(1)
   weeklyXp     Int      @default(0)
   weekStartsAt DateTime
+  league       String   @default("BRONZE") // 🔥 Motor de Elos ativado
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

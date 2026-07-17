@@ -66,6 +66,31 @@ export function p3PL(theta, a, b, c) {
   return c + (1 - c) / (1 + Math.exp(-a * (theta - b)));
 }
 
+/**
+ * Implementação do Modelo Logístico de 3 Parâmetros (3PL)
+ * @param {number} theta - Proficiência do aluno
+ * @param {number} a - Discriminação
+ * @param {number} b - Dificuldade
+ * @param {number} c - Acerto Casual (Chute)
+ */
+export const calculateProbability = (theta, a, b, c) => {
+  return c + (1 - c) / (1 + Math.exp(-a * (theta - b)));
+};
+
+export const computeFinalTRI = (hits) => {
+  // Exemplo de calibração simplificada para o modelo
+  // O sistema agora calcula a média ponderada baseada na dificuldade dos itens
+  if (hits.length === 0) return { tri: 0, proficiency: "Insuficiente" };
+  
+  const totalScore = hits.reduce((acc, item) => acc + item.difficultyFactor, 0);
+  const normalizedTRI = (totalScore / hits.length) * 1000; // Ajuste conforme escala INEP
+  
+  return {
+    tri: Math.round(normalizedTRI),
+    proficiency: normalizedTRI > 500 ? "Satisfatória" : "Insuficiente"
+  };
+};
+
 // ─── Estimador de Máxima Verossimilhança (MLE) ─────────────────────────────
 function logLikelihood(responses, theta) {
   let sum = 0;

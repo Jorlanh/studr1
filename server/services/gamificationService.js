@@ -51,7 +51,7 @@ async function getOrCreateUserXp(userId) {
   return prisma.userXp.upsert({
     where: { userId },
     update: {},
-    create: { userId, weekStartsAt: startOfWeek() },
+    create: { userId, weekStartsAt: startOfWeek(), league: 'BRONZE' },
   });
 }
 
@@ -266,6 +266,7 @@ export async function getState(userId) {
       totalXp: xp?.totalXp ?? 0,
       level: lvl,
       weeklyXp: xp?.weeklyXp ?? 0,
+      league: xp?.league ?? 'BRONZE'
     },
     title: currentTitle,
     currentLevelXp: currentThreshold?.xpRequired ?? 0,
@@ -278,4 +279,121 @@ export async function getState(userId) {
     badges: badges.map(b => ({ ...b.badge, awardedAt: b.awardedAt })),
     progress,
   };
+}
+
+// ─── Ranking Oficial (Motor de Processamento) ─────────────────────────────────
+
+export async function getCurrentRanking(userId, limit = 50, offset = 0) {
+  const currentWeekTime = startOfWeek().getTime();
+
+  // 1. Descobre qual é a liga atual do usuário solicitante
+  const me = await prisma.userXp.findUnique({ where: { userId }, select: { league: true } });
+  const myLeague = me?.league || 'BRONZE';
+
+  // 2. Busca APENAS os usuários que estão na MESMA liga
+  const userXps = await prisma.userXp.findMany({
+    where: { league: myLeague },
+    include: {
+      user: { select: { id: true, name: true } }
+    }
+  });
+
+  // 3. Aplica a penalidade temporal (zera o XP visual se não jogou nesta semana)
+  let entries = userXps.map(x => {
+    const isCurrentWeek = x.weekStartsAt && new Date(x.weekStartsAt).getTime() === currentWeekTime;
+    return {
+      id: x.user?.id || x.userId,
+      name: x.user?.name || 'Estudante',
+      weeklyXp: isCurrentWeek ? (x.weeklyXp || 0) : 0,
+      level: x.level || 1,
+      league: x.league
+    };
+  });
+
+  // 4. Ordenação Implacável
+  entries.sort((a, b) => {
+    if (b.weeklyXp !== a.weeklyXp) return b.weeklyXp - a.weeklyXp;
+    if (b.level !== a.level) return b.level - a.level;
+    return a.name.localeCompare(b.name);
+  });
+
+  const myIndex = entries.findIndex(e => e.id === userId);
+  const myPosition = myIndex !== -1 ? myIndex + 1 : 0;
+
+  const paginatedEntries = entries.slice(offset, offset + limit).map((e, idx) => ({
+    rank: offset + idx + 1,
+    name: e.name,
+    weeklyXp: e.weeklyXp,
+    level: e.level,
+    isMe: e.id === userId
+  }));
+
+  return {
+    league: myLeague, 
+    myPosition: myPosition,
+    totalInLeague: entries.length,
+    entries: paginatedEntries
+  };
+}
+
+// ─── Mecânica de Rebaixamento e Promoção (Cron Job) ───────────────────────────
+
+export async function rolloverWeek() {
+  const leagues = ['BRONZE', 'SILVER', 'GOLD', 'DIAMOND', 'CHALLENGER'];
+  const currentWeek = startOfWeek();
+  const users = await prisma.userXp.findMany();
+
+  const byLeague = { 'BRONZE': [], 'SILVER': [], 'GOLD': [], 'DIAMOND': [], 'CHALLENGER': [] };
+  users.forEach(u => {
+    if (byLeague[u.league]) byLeague[u.league].push(u);
+    else byLeague['BRONZE'].push(u); 
+  });
+
+  const updates = [];
+
+  for (let i = 0; i < leagues.length; i++) {
+    const league = leagues[i];
+    let players = byLeague[league];
+
+    // Ordena os jogadores da liga pelo XP atual antes de zerar
+    players.sort((a, b) => {
+      if (b.weeklyXp !== a.weeklyXp) return b.weeklyXp - a.weeklyXp;
+      return b.level - a.level;
+    });
+
+    const total = players.length;
+    if (total === 0) continue;
+
+    // A foice dos 20%
+    const top20Count = Math.max(1, Math.floor(total * 0.20));
+    const bottom20Count = Math.max(1, Math.floor(total * 0.20));
+
+    players.forEach((p, index) => {
+      let newLeague = league;
+
+      // Promoção (não aplica para Challenger)
+      if (index < top20Count && i < leagues.length - 1) {
+        newLeague = leagues[i + 1];
+      }
+      // Rebaixamento (não aplica para Bronze)
+      else if (index >= total - bottom20Count && i > 0) {
+        newLeague = leagues[i - 1];
+      }
+
+      updates.push(
+        prisma.userXp.update({
+          where: { userId: p.userId },
+          data: {
+            league: newLeague,
+            weeklyXp: 0,
+            weekStartsAt: currentWeek
+          }
+        })
+      );
+    });
+  }
+
+  // Executa todas as atualizações no banco de uma vez
+  await prisma.$transaction(updates);
+  return { status: 'Rollover executed', usersProcessed: users.length };
 }

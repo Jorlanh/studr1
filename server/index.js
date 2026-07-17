@@ -1,21 +1,14 @@
 import express from 'express';
 
 import cors from 'cors';
-
 import dotenv from 'dotenv';
-
 import bcrypt from 'bcryptjs';
-
 import jwt from 'jsonwebtoken';
-
 import { randomUUID, createHmac } from 'crypto';
-
 import { PrismaClient } from '@prisma/client';
-
 import { Resend } from 'resend';
-
 import { rateLimit } from 'express-rate-limit';
-
+import { emitEvent, getState, checkBadges, getCurrentRanking } from './services/gamificationService.js';
 import nodemailer from 'nodemailer'; // 🔥 Adicionado para o sistema híbrido
 
 
@@ -23,27 +16,15 @@ import nodemailer from 'nodemailer'; // 🔥 Adicionado para o sistema híbrido
 // ─── SERVICES ─────────────────────────────────────────────────────────────
 
 import * as aiService from './services/aiService.js';
-
 import { checkAndConsumeQuestion, checkAndConsumeMock } from './services/planService.js';
-
 import { calculateScore, calculateFinalGrade } from './services/scoringService.js';
-
-
 
 // 🛡️ IMPORTAÇÕES DA TORRE CORRIGIDAS
 
 import { getUserTower, submitFloorResult, getTop3ForBuilding, getTowerMetadata } from './services/towerService.js';
-
-
-
 import { emitEvent, getState as getGamificationState } from './services/gamificationService.js';
-
 import { getCurrentRanking, rolloverWeek } from './services/rankingService.js';
-
 import { asaasService } from './services/asaasService.js';
-
-
-
 import cron from 'node-cron';
 
 
@@ -2535,9 +2516,6 @@ app.get('/api/gamification/state', authenticateToken, async (req, res) => {
 
 
 // ─── Ranking ──────────────────────────────────────────────────────────────────
-
-
-
 app.get('/api/ranking', authenticateToken, async (req, res) => {
 
     try {
@@ -2847,32 +2825,18 @@ app.post('/api/ai/evaluate-essay', authenticateToken, async (req, res) => {
 app.post('/api/ai/chat', authenticateToken, async (req, res) => {
 
     try {
-
-        const user = await prisma.user.findUnique({ where: { id: req.user.userId } });
-        if (user.subscriptionStatus === 'SIMULADO') {
-            return res.status(403).json({ error: 'Tutor IA bloqueado no Plano Simulado. Faça upgrade.' });
-        }
-
         const { history, newMessage } = req.body;
 
         if (typeof newMessage !== 'string' || newMessage.length > 2000) {
-
             return res.status(400).json({ error: 'A mensagem excede o limite máximo de 2.000 caracteres.' });
-
         }
 
         const response = await aiService.getChatResponse(history, newMessage);
-
         res.json({ text: response });
-
     } catch (error) {
-
         console.error('Erro no chat:', error);
-
         res.status(500).json({ error: 'Erro no chat.' });
-
     }
-
 });
 
 
