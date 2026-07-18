@@ -2162,21 +2162,14 @@ app.post('/api/mock/start', authenticateToken, async (req, res) => {
 
 
 app.post('/api/exams/:id/finalize', authenticateToken, async (req, res) => {
-
     try {
-
         const examId = req.params.id;
-
         const userId = req.user.userId;
 
-
-
         const exam = await prisma.exam.findFirst({ where: { id: examId, userId } });
-
         if (!exam) return res.status(404).json({ error: 'Simulado não encontrado.' });
-
         if (exam.finalizedAt) return res.status(400).json({ error: 'Simulado já finalizado.' });
-
+        
         const user = await prisma.user.findUnique({ where: { id: userId } });
         
         // Verifica a cota de TRI para quem é SIMULADO
@@ -2184,77 +2177,84 @@ app.post('/api/exams/:id/finalize', authenticateToken, async (req, res) => {
             if (user.triQuota <= 0) {
                 return res.status(403).json({ error: 'Sua cota mensal de cálculos TRI foi atingida. Assine o plano completo.' });
             }
-            // Desconta a cota de TRI
             await prisma.user.update({ where: { id: userId }, data: { triQuota: { decrement: 1 } } });
         }
 
-        const { responses, redacaoScore } = req.body;
+        const { responses, redacaoScore, redacaoText } = req.body;
 
         if (!Array.isArray(responses) || responses.length === 0) {
-
             return res.status(400).json({ error: 'Respostas inválidas.' });
-
         }
 
-
-
-        const { theta, score, band, finalAverage, scoresByArea } = await calculateFinalGrade(responses, redacaoScore || 0);
-
+        // 🔥 CORREÇÃO CRÍTICA: Pegando o objeto inteiro para não perder a variável "score"
+        const finalGrade = await calculateFinalGrade(responses, redacaoScore || 0);
         const timeSpentSec = Math.round((Date.now() - new Date(exam.createdAt).getTime()) / 1000);
 
-
-
         await prisma.exam.update({
-
             where: { id: examId },
-
-            data: { score: finalAverage, theta, band, timeSpentSec, finalizedAt: new Date() },
-
+            data: { 
+                score: finalGrade.score, // Salva a nota corretamente
+                theta: finalGrade.theta, 
+                band: finalGrade.band, 
+                timeSpentSec, 
+                finalizedAt: new Date() 
+            },
         });
 
-
-
         const updateOps = responses
-
             .filter(r => typeof r.orderIndex === 'number')
-
             .map(r =>
-
                 prisma.examQuestion.updateMany({
-
                     where: { examId, orderIndex: r.orderIndex },
-
                     data: {
-
                         userAnswer: r.userAnswer ?? null,
-
                         isCorrect: !!r.correct,
-
                         answeredAt: new Date(),
-
                     },
-
                 })
-
             );
+
+        // 🔥 SALVA A REDAÇÃO OFICIAL NO MEIO DA PROVA (Questão 90.5)
+        if (redacaoText && redacaoText.trim().length > 0) {
+            updateOps.push(
+                prisma.examQuestion.create({
+                    data: {
+                        examId,
+                        orderIndex: 90.5,
+                        subject: 'Redação Oficial',
+                        difficulty: 'MEDIUM',
+                        correctAnswer: 0,
+                        userAnswer: 0,
+                        isCorrect: true, 
+                        answeredAt: new Date(),
+                        questionJson: {
+                            isEssay: true,
+                            stem: '📝 Caderno de Redação Oficial',
+                            userText: redacaoText,
+                            score: redacaoScore
+                        }
+                    }
+                })
+            );
+        }
 
         if (updateOps.length > 0) await Promise.all(updateOps);
 
+        // 🔥 RESPOSTA INSTANTÂNEA: Envia a nota pro Front-end imediatamente para não dar Timeout (O fim do Bug do 400)
+        res.json({ score: finalGrade.score, band: finalGrade.band, theta: finalGrade.theta, scoresByArea: finalGrade.scoresByArea });
 
-
-        res.json({ score: finalAverage, band, theta, scoresByArea });
+        // 🔥 BACKGROUND SYNC: Salva as 180 questões no banco de forma silenciosa sem segurar a tela do usuário
+        if (updateOps.length > 0) {
+            Promise.all(updateOps).catch(err => console.error('[Background Sync] Erro ao salvar questões:', err));
+        }
 
     } catch (err) {
-
         console.error('[finalize] erro:', err);
-
-        res.status(500).json({ error: 'Erro ao finalizar simulado.' });
-
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Erro ao finalizar simulado.' });
+        }
     }
-
 });
-
-
 
 app.put('/api/exams/:examId/questions/:orderIndex/answer', authenticateToken, async (req, res) => {
 
@@ -2577,11 +2577,10 @@ app.post('/api/ai/generate-questions', authenticateToken, async (req, res) => {
             if (exam && exam.languagePreference) {
                 console.log(`[AI:Mock] Aplicando preferência de idioma: ${exam.languagePreference} para exam: ${examId}`);
                 
-                // Deixando explícito para evitar fallback acidental
                 if (exam.languagePreference === 'INGLES') {
-                    specificTopic = "Reading comprehension in English";
+                    specificTopic = "Inglês: Reading comprehension in English";
                 } else if (exam.languagePreference === 'ESPANHOL') {
-                    specificTopic = "Comprensión lectora en español";
+                    specificTopic = "Espanhol: Comprensión lectora en español";
                 }
             }
         }
