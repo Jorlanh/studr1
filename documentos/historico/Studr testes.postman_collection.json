@@ -1,0 +1,347 @@
+{
+  "info": {
+    "_postman_id": "ad5c7bbf-de05-4a6b-aa85-8942685cfd3a",
+    "name": "Studr testes",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "39698371"
+  },
+  "item": [
+    {
+      "name": "Login para realizar testes",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n  \"email\": \"premium@studr.com.br\",\r\n  \"password\": \"Studr@2026\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:4000/api/auth/login",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "4000",
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Login Admin",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n  \"email\": \"sachabm@hotmail.com\",\r\n  \"password\": \"101014\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:4000/api/auth/login",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "4000",
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Disparo do Simulado para pegar o ID",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIwNTAwOThlZi01Njk1LTQ3ZmEtOTBmYi1mM2ExODYyYTRlODciLCJzZXNzaW9uVG9rZW4iOiI2MTRlNGZkNC04ODVmLTRlZTYtYjJmZi04MzE3MWI1YzEwNWUiLCJpYXQiOjE3ODQzNTU4MTF9.xZgCI4nIfjLOcFLN2r-dBuuO3HoIczm8wX0mMwRDFa4",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n  \"email\": \"sachabm@hotmail.com\",\r\n  \"password\": \"101014\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:4000/api/mock/start",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "4000",
+          "path": [
+            "api",
+            "mock",
+            "start"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Simulado 180Q com TRI funcional",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIwNTAwOThlZi01Njk1LTQ3ZmEtOTBmYi1mM2ExODYyYTRlODciLCJzZXNzaW9uVG9rZW4iOiI2MTRlNGZkNC04ODVmLTRlZTYtYjJmZi04MzE3MWI1YzEwNWUiLCJpYXQiOjE3ODQzNTU4MTF9.xZgCI4nIfjLOcFLN2r-dBuuO3HoIczm8wX0mMwRDFa4",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"responses\": [\r\n        { \"orderIndex\": 0, \"correct\": true, \"area\": \"HUMANAS\" },\r\n        { \"orderIndex\": 1, \"correct\": true, \"area\": \"LINGUAGENS\" },\r\n        { \"orderIndex\": 2, \"correct\": true, \"area\": \"NATUREZA\" },\r\n        { \"orderIndex\": 3, \"correct\": true, \"area\": \"EXATAS\" }\r\n    ],\r\n    \"redacaoScore\": 1000\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:4000/api/exams/cmrq00dw30003dw15dqi7zhkh/finalize",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "4000",
+          "path": [
+            "api",
+            "exams",
+            "cmrq00dw30003dw15dqi7zhkh",
+            "finalize"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Sisu, ProUni e Fies",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI5NGY1YjMyNy1lNWRjLTRkNDItODFlNC0yYTJlN2M4NDFjYTAiLCJzZXNzaW9uVG9rZW4iOiJjZTI0OWM4Zi1kZjJmLTRhNjgtYTY2Ny1mZjVmZDlmMjNhNjkiLCJpYXQiOjE3ODQzNTIwMTZ9.5EfYFknWOpQ1nkoUmKZVA7k8T0XIL5TDc7xzRjOTLug",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n  \"score\": 720.5,\r\n  \"desiredCourse\": \"Engenharia de Software\",\r\n  \"preferredUniversity\": \"UFBA\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:4000/api/ai/analyze-sisu",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "4000",
+          "path": [
+            "api",
+            "ai",
+            "analyze-sisu"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Teste de Questões em Inglês",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIwNTAwOThlZi01Njk1LTQ3ZmEtOTBmYi1mM2ExODYyYTRlODciLCJzZXNzaW9uVG9rZW4iOiI2MTRlNGZkNC04ODVmLTRlZTYtYjJmZi04MzE3MWI1YzEwNWUiLCJpYXQiOjE3ODQzNTc3NDV9.8KUBHil7yMcjlIExTKRwdgZYbc4rBG7fcqxCVqLcMgs",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"area\": \"LINGUAGENS\",\r\n    \"count\": 1,\r\n    \"specificTopic\": \"Reading comprehension in English\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:4000/api/ai/generate-questions",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "4000",
+          "path": [
+            "api",
+            "ai",
+            "generate-questions"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Teste de Questões em Espanhol",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIwNTAwOThlZi01Njk1LTQ3ZmEtOTBmYi1mM2ExODYyYTRlODciLCJzZXNzaW9uVG9rZW4iOiI2MTRlNGZkNC04ODVmLTRlZTYtYjJmZi04MzE3MWI1YzEwNWUiLCJpYXQiOjE3ODQzNTc3NDV9.8KUBHil7yMcjlIExTKRwdgZYbc4rBG7fcqxCVqLcMgs",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"area\": \"LINGUAGENS\",\r\n    \"count\": 1,\r\n    \"specificTopic\": \"Comprensión lectora en español\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:4000/api/ai/generate-questions",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "4000",
+          "path": [
+            "api",
+            "ai",
+            "generate-questions"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Ranking de Pontuação entre Divisões",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIwNTAwOThlZi01Njk1LTQ3ZmEtOTBmYi1mM2ExODYyYTRlODciLCJzZXNzaW9uVG9rZW4iOiI2MTRlNGZkNC04ODVmLTRlZTYtYjJmZi04MzE3MWI1YzEwNWUiLCJpYXQiOjE3ODQzNTM5Njd9.PL7NhdQvzwC86DaoJ_PYDmsTgHaXbrRQQQ_pErMfJ1E",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:4000/api/ranking",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "4000",
+          "path": [
+            "api",
+            "ranking"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Teste de up, permanencia e downgrade de divisão",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJlYTRkMzI4Ny01ZmY5LTRhMzAtOTUxMy1lZTUzMmRjNTJiZDciLCJzZXNzaW9uVG9rZW4iOiJmZTJhYjVhMi04NDk1LTQ2MTgtYjc2Mi03ZjJlZDQzYWY0OTgiLCJpYXQiOjE3ODQzNTQ0MjN9.6AIVPn0X5Gd07iKCmZ1ec8Rs2YqGSBfy024qmMLOSVg",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:4000/api/admin/force-rollover",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "4000",
+          "path": [
+            "api",
+            "admin",
+            "force-rollover"
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}

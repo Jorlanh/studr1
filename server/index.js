@@ -1,5 +1,4 @@
 import express from 'express';
-
 import cors from 'cors';
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
@@ -8,22 +7,19 @@ import { randomUUID, createHmac } from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import { Resend } from 'resend';
 import { rateLimit } from 'express-rate-limit';
-import { emitEvent, getState, checkBadges, getCurrentRanking } from './services/gamificationService.js';
 import nodemailer from 'nodemailer'; // 🔥 Adicionado para o sistema híbrido
 
-
-
 // ─── SERVICES ─────────────────────────────────────────────────────────────
-
 import * as aiService from './services/aiService.js';
 import { checkAndConsumeQuestion, checkAndConsumeMock } from './services/planService.js';
 import { calculateScore, calculateFinalGrade } from './services/scoringService.js';
 
 // 🛡️ IMPORTAÇÕES DA TORRE CORRIGIDAS
-
 import { getUserTower, submitFloorResult, getTop3ForBuilding, getTowerMetadata } from './services/towerService.js';
-import { emitEvent, getState as getGamificationState } from './services/gamificationService.js';
-import { getCurrentRanking, rolloverWeek } from './services/rankingService.js';
+
+// 🔥 MOTOR DE GAMIFICAÇÃO E RANKING (Unificado)
+import { emitEvent, getState as getGamificationState, checkBadges, getCurrentRanking, rolloverWeek } from './services/gamificationService.js';
+
 import { asaasService } from './services/asaasService.js';
 import cron from 'node-cron';
 
@@ -518,7 +514,6 @@ app.post(['/api/webhooks/kiwify', '/api/webhook/kiwify'], webhookLimiter, async 
 
        // --- CENÁRIO A: COMPRA APROVADA ---
         if (isPaid) {
-            
             const cleanPhonePassword = rawPhone.replace(/\D/g, '') || Math.random().toString(36).slice(-8);
             const hashedPassword = await bcrypt.hash(cleanPhonePassword, 10);
 
@@ -527,41 +522,54 @@ app.post(['/api/webhooks/kiwify', '/api/webhook/kiwify'], webhookLimiter, async 
             const subStatus = isSimulado ? 'SIMULADO' : (plan ? plan.accessLevel : 'FULL');
             const cycle = plan ? plan.billingCycle : (productName?.toLowerCase().includes('anual') ? 'YEARLY' : 'MONTHLY');
 
-            // ⬇️ BLINDAGEM UPSERT COM AS COTAS INJETADAS ⬇️
-            const updateData = {
-                isPremium: true,
-                subscriptionStatus: subStatus,
-                billingCycle: cycle,
-                planId: plan?.id || null,
-                lastPaymentDate: new Date(),
-                trialEndsAt: new Date(),
-                isVerified: true,
-                simuladosQuota: isSimulado ? 1 : 9999, // <-- COTA INJETADA
-                triQuota: isSimulado ? 1 : 9999        // <-- COTA INJETADA
-            };
+            // Define o incremento: 1 para simulado, 9999 para planos full (acesso total)
+            const quotaIncrement = isSimulado ? 1 : 9999;
 
             let user;
             try {
-                // O Upsert resolve a "Race Condition" nativamente
-                user = await prisma.user.upsert({
-                    where: { email },
-                    update: updateData,
-                    create: {
-                        email,
-                        name: fullName,
-                        password: hashedPassword,
-                        ...updateData
-                    }
-                });
-                console.log(`[Kiwify Webhook] Conta de aluno sincronizada com sucesso: ${email}`);
-            } catch (err) {
-                // Se a Kiwify atirar duas vezes no exato milissegundo, forçamos o update como fallback
-                if (err.code === 'P2002') {
-                    user = await prisma.user.update({ where: { email }, data: updateData });
-                    console.log(`[Kiwify Webhook] Concorrência resolvida e aluno atualizado: ${email}`);
+                // Primeiro, verificamos se o usuário já existe
+                const existingUser = await prisma.user.findUnique({ where: { email } });
+
+                if (existingUser) {
+                    // Se já existe, INCREMENTAMOS as cotas para não perder o saldo anterior
+                    user = await prisma.user.update({
+                        where: { email },
+                        data: {
+                            isPremium: true,
+                            subscriptionStatus: subStatus,
+                            billingCycle: cycle,
+                            planId: plan?.id || null,
+                            lastPaymentDate: new Date(),
+                            isVerified: true,
+                            // O operador { increment: x } é seguro contra perda de saldo
+                            simuladosQuota: { increment: quotaIncrement }, 
+                            triQuota: { increment: quotaIncrement }
+                        }
+                    });
+                    console.log(`[Kiwify Webhook] Conta existente atualizada (cota incrementada): ${email}`);
                 } else {
-                    throw err; // Se for outro erro, grita
+                    // Se é novo, criamos com o valor inicial (usamos o increment para garantir compatibilidade)
+                    user = await prisma.user.create({
+                        data: {
+                            email,
+                            name: fullName,
+                            password: hashedPassword,
+                            isPremium: true,
+                            subscriptionStatus: subStatus,
+                            billingCycle: cycle,
+                            planId: plan?.id || null,
+                            lastPaymentDate: new Date(),
+                            trialEndsAt: new Date(),
+                            isVerified: true,
+                            simuladosQuota: quotaIncrement,
+                            triQuota: quotaIncrement
+                        }
+                    });
+                    console.log(`[Kiwify Webhook] Conta de aluno criada com sucesso: ${email}`);
                 }
+            } catch (err) {
+                console.error(`[Kiwify Webhook] Erro na sincronização:`, err);
+                throw err;
             }
 
            // === ENVIO DE E-MAIL DE BOAS-VINDAS (BLINDAGEM DE 15 MINUTOS) ===
@@ -2127,43 +2135,28 @@ app.post('/api/practice/start', authenticateToken, async (req, res) => {
 
 
 app.post('/api/mock/start', authenticateToken, async (req, res) => {
-
     try {
-
         const check = await checkAndConsumeMock(req.user.userId);
+        if (!check.allowed) return res.status(403).json({ error: check.reason });
 
-        if (!check.allowed) {
-
-            return res.status(403).json({ error: check.reason });
-
-        }
-
-        const { mode, area } = req.body || {};
+        // Captura o 'mode' e a 'foreignLanguagePreference' (Novo campo)
+        const { mode, area, foreignLanguagePreference } = req.body || {};
 
         const exam = await prisma.exam.create({
-
             data: {
-
                 userId: req.user.userId,
-
-                type: mode === 'FULL' ? 'MOCK_FULL' : mode === 'AREA' ? 'MOCK_AREA' : 'MOCK_FULL',
-
+                type: mode === 'FULL' ? 'MOCK_FULL' : 'MOCK_AREA',
                 area: mode === 'AREA' ? (area || null) : 'MIXED',
-
+                // Salva a preferência do usuário aqui
+                languagePreference: foreignLanguagePreference || 'INGLES', 
             },
-
         });
 
         res.json({ ok: true, examId: exam.id });
-
     } catch (error) {
-
         console.error('[Plan] Erro em /mock/start:', error);
-
-        res.status(500).json({ error: 'Erro ao verificar plano.' });
-
+        res.status(500).json({ error: 'Erro ao iniciar simulado.' });
     }
-
 });
 
 
@@ -2539,7 +2532,6 @@ app.get('/api/ranking', authenticateToken, async (req, res) => {
 });
 
 
-
 // ─── Cron ─────
 
 if (process.env.TEST !== '1') {
@@ -2576,7 +2568,23 @@ const DIFFICULTY_KEY = {
 app.post('/api/ai/generate-questions', authenticateToken, async (req, res) => {
     try {
         // EXTRAIR PRIMEIRO:
-        const { area, count, specificTopic, excludeTopics, isReviewErrors, inMock, examId } = req.body;
+        let { area, count, specificTopic, excludeTopics, isReviewErrors, inMock, examId } = req.body;
+
+        // 🔥 LÓGICA DE INTERCEPTAÇÃO PARA IDIOMA EM SIMULADOS
+        if (inMock && examId && area === 'LINGUAGENS' && !specificTopic) {
+            const exam = await prisma.exam.findUnique({ where: { id: examId } });
+            
+            if (exam && exam.languagePreference) {
+                console.log(`[AI:Mock] Aplicando preferência de idioma: ${exam.languagePreference} para exam: ${examId}`);
+                
+                // Deixando explícito para evitar fallback acidental
+                if (exam.languagePreference === 'INGLES') {
+                    specificTopic = "Reading comprehension in English";
+                } else if (exam.languagePreference === 'ESPANHOL') {
+                    specificTopic = "Comprensión lectora en español";
+                }
+            }
+        }
 
         // VERIFICAR DEPOIS:
         const user = await prisma.user.findUnique({ where: { id: req.user.userId } });
@@ -2591,7 +2599,7 @@ app.post('/api/ai/generate-questions', authenticateToken, async (req, res) => {
                 options: ['Alternativa A', 'Alternativa B', 'Alternativa C', 'Alternativa D', 'Alternativa E'],
                 correctIndex: 0,
                 subject: specificTopic || area,
-                difficulty: 'MEDIUM', // Mudado de MÉDIA para MEDIUM
+                difficulty: 'MEDIUM',
                 area: area || 'EXATAS',
                 explanation: '[E2E] Explicação de teste — alternativa A está correta.',
             }));

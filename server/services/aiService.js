@@ -237,9 +237,9 @@ export const generateQuestionBatch = async (area, requestedCount = 1, specificTo
     let languageInstruction = "";
     
     if (searchStr.includes('inglês') || searchStr.includes('ingles') || searchStr.includes('english')) {
-        languageInstruction = `\n\nDIRETRIZ DE IDIOMA MANDATÓRIA: Esta é uma questão de LÍNGUA INGLESA. Portanto, o texto de apoio (context), o enunciado (stem) e TODAS as opções (options) DEVEM SER ESCRITOS TOTALMENTE EM INGLÊS. Apenas a explicação da resposta correta (explanation) deve ser em Português do Brasil para fins de estudo.`;
+    languageInstruction = `\n\nDIRETRIZ DE IDIOMA MANDATÓRIA: Esta é uma questão de LÍNGUA INGLESA. TRADUZA COMPLETAMENTE o texto de apoio (context), o enunciado (stem) e TODAS as opções (options) para o INGLÊS. É PROIBIDO usar Português nessas partes. Apenas a explicação (explanation) deve ser em Português do Brasil.`;
     } else if (searchStr.includes('espanhol') || searchStr.includes('spanish')) {
-        languageInstruction = `\n\nDIRETRIZ DE IDIOMA MANDATÓRIA: Esta é uma questão de LÍNGUA ESPANHOLA. Portanto, o texto de apoio (context), o enunciado (stem) e TODAS as opções (options) DEVEM SER ESCRITOS TOTALMENTE EM ESPANHOL. Apenas a explicação da resposta correta (explanation) deve ser em Português do Brasil para fins de estudo.`;
+        languageInstruction = `\n\nDIRETRIZ DE IDIOMA MANDATÓRIA: Esta é uma questão de LÍNGUA ESPANHOLA. TRADUZA COMPLETAMENTE o texto de apoio (context), o enunciado (stem) e TODAS as opções (options) para o ESPANHOL. É PROIBIDO usar Português nessas partes. Apenas a explicação (explanation) deve ser em Português do Brasil.`;
     }
 
     if (isReviewErrors && specificTopic && specificTopic.trim() !== "") {
@@ -435,44 +435,44 @@ export const evaluateEssay = async (theme, essayText, performanceData = null) =>
       No campo "generalFeedback", você DEVE agir como um Treinador de Alta Performance do ENEM. Analise como o aluno geriu o tempo e a fadiga. Se o tempo estourou ou as pausas foram altas, seja implacável alertando sobre resistência mental e fadiga. Se terminou no tempo com coesão, elogie o preparo tático sob pressão extrema da Torre.
     ` : "";
 
-    // PROMPT BLINDADO E RIGOROSO DO ENEM
+    // 🔥 PROMPT BLINDADO E EXTREMAMENTE RIGOROSO DO INEP
     const prompt = `
-      Você é um Corretor Oficial do ENEM, rigoroso e técnico. Corrija a redação abaixo sobre o tema: "${theme}".
+      Você é um Corretor Oficial do ENEM, EXTREMAMENTE RIGOROSO, analítico e impiedoso com erros estruturais. Corrija a redação abaixo sobre o tema: "${theme}".
       ${performanceContext}
       
-      REGRAS ABSOLUTAS (OBRIGATÓRIO):
-      1. A nota de cada competência SÓ PODE SER: 0, 40, 80, 120, 160 ou 200. É PROIBIDO DAR NOTAS QUEBRADAS COMO 85, 90, 72.
-      2. O "totalScore" DEVE SER a soma exata das 5 competências.
-      3. VOCÊ NÃO PODE INVENTAR NOMES DE COMPETÊNCIAS. USE EXATAMENTE ESTAS 5:
-         ID 1: "Domínio da Norma Padrão"
-         ID 2: "Compreensão e Repertório"
-         ID 3: "Organização e Argumentação"
-         ID 4: "Coesão e Conectivos"
-         ID 5: "Proposta de Intervenção"
+      REGRAS ABSOLUTAS E CRITÉRIOS DE CORREÇÃO (OBRIGATÓRIO):
+      1. A nota de cada competência SÓ PODE SER: 0, 40, 80, 120, 160 ou 200. É PROIBIDO DAR NOTAS QUEBRADAS (ex: 85, 150).
+      2. O "totalScore" DEVE SER a soma exata das notas das 5 competências.
+      3. CRITÉRIOS INEGOCIÁVEIS DO INEP (FOCO EM C2, C3 E C4):
+         - ID 1: "Domínio da Norma Padrão": Penalize desvios de crase, vírgula, ortografia e concordância.
+         - ID 2: "Compreensão e Repertório": É OBRIGATÓRIO o uso de REPERTÓRIO SOCIOCULTURAL LEGITIMADO. O texto PRECISA mobilizar autores, obras, fatos históricos, dados ou conceitos de outras áreas. Se a argumentação for baseada apenas no senso comum, cópia dos textos motivadores, ou se NÃO houver repertório externo, a nota MÁXIMA permitida nesta competência é 120. Puna severamente a falta de repertório.
+         - ID 3: "Organização e Argumentação": Avalie o projeto de texto e a profundidade. Argumentos superficiais, baseados em "achismos" ou "encheção de linguiça" sem explicação lógica limitam a nota a 120 ou 160 no máximo.
+         - ID 4: "Coesão e Conectivos": A articulação das ideias é vital. Se os argumentos são soltos, superficiais e carecem de conectivos lógicos diversificados entre os parágrafos (obrigatório no início do D1, D2 e Conclusão) e dentro deles, a nota MÁXIMA permitida é 120.
+         - ID 5: "Proposta de Intervenção": Deve conter OBRIGATORIAMENTE 5 elementos: Agente, Ação, Meio/Modo, Efeito/Finalidade e Detalhamento. Vale 40 pontos para cada elemento explícito e válido.
 
       REDAÇÃO DO ALUNO:
       """
       ${essayText}
       """
 
-      Retorne APENAS um objeto JSON válido (sem marcadores markdown). Formato:
+      Retorne APENAS um objeto JSON válido (sem formatação markdown). Formato exigido:
       {
         "totalScore": 800,
-        "generalFeedback": "Parágrafo resumindo a performance geral do aluno e nível do texto.",
+        "generalFeedback": "Parágrafo técnico resumindo a performance geral, apontando explicitamente se houve ausência de repertório (C2), falhas na argumentação (C3) e coesão rasa (C4).",
         "strengths": ["Ponto forte 1", "Ponto forte 2"],
-        "weaknesses": ["Ponto de melhoria 1", "Ponto de melhoria 2"],
+        "weaknesses": ["Ausência de repertório sociocultural legitimado afetando a C2", "Argumentos superficiais e mal articulados afetando a C4"],
         "competencies": [
           { "id": 1, "name": "Domínio da Norma Padrão", "score": 160, "feedback": "Análise gramatical detalhada..." },
-          { "id": 2, "name": "Compreensão e Repertório", "score": 160, "feedback": "Análise do repertório..." },
-          { "id": 3, "name": "Organização e Argumentação", "score": 160, "feedback": "Análise do projeto de texto..." },
-          { "id": 4, "name": "Coesão e Conectivos", "score": 160, "feedback": "Análise dos elementos coesivos..." },
-          { "id": 5, "name": "Proposta de Intervenção", "score": 160, "feedback": "Análise dos 5 elements da PI..." }
+          { "id": 2, "name": "Compreensão e Repertório", "score": 120, "feedback": "Análise do repertório. Faltou repertório externo legitimado e aprofundamento sociológico..." },
+          { "id": 3, "name": "Organização e Argumentação", "score": 120, "feedback": "Análise do projeto de texto. Argumentação muito superficial..." },
+          { "id": 4, "name": "Coesão e Conectivos", "score": 120, "feedback": "Análise da articulação. Falta de conectivos e ideias soltas..." },
+          { "id": 5, "name": "Proposta de Intervenção", "score": 160, "feedback": "Análise dos 5 elementos da PI..." }
         ]
       }
     `;
 
     const messages = [
-        { role: "system", content: "Corretor oficial do ENEM. Siga estritamente as regras de pontuação e matriz de referência do INEP. Retorne APENAS JSON." },
+        { role: "system", content: "Você é o Corretor Chefe do ENEM. Seja implacável com a ausência de repertório sociocultural (C2) e com a falta de articulação lógica/coesão (C4). Retorne APENAS JSON puro." },
         { role: "user", content: prompt }
     ];
 

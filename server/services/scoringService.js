@@ -201,22 +201,27 @@ export async function calculateScore(responses) {
 
 // ─── Lógica Adicionada (Redação e Média Final) ──────────────────────────────
 export async function calculateFinalGrade(responses, redacaoScore = 0) {
-  const triResults = await calculateScore(responses); 
-  
-  // Se não houver nota de redação definida, usamos apenas a média das áreas.
-  // Se houver, dividimos o total (Soma das Áreas + Redação) por (Número de áreas + 1)
-  const validAreas = Object.keys(triResults.scoresByArea).filter(k => k !== 'OUTROS');
-  const areasTotal = validAreas.reduce((sum, area) => sum + triResults.scoresByArea[area], 0);
-  
-  const totalSum = areasTotal + redacaoScore;
-  const divisor = validAreas.length + (redacaoScore > 0 ? 1 : 0);
-  
-  const finalAverage = divisor > 0 ? Math.round(totalSum / divisor) : 0;
-  
-  return {
-    ...triResults,
-    redacaoScore,
-    finalAverage,
-    band: scoreToBand(finalAverage)
-  };
+    const triResults = await calculateScore(responses); 
+    
+    // Filtra apenas áreas que possuem dados (evita dividir por algo não respondido)
+    const validAreas = Object.keys(triResults.scoresByArea).filter(k => k !== 'OUTROS');
+    
+    // Soma apenas as áreas que existem
+    const areasTotal = validAreas.reduce((sum, area) => sum + triResults.scoresByArea[area], 0);
+    
+    // Divisor dinâmico: áreas respondidas + (1 se houver redação)
+    const areasCount = validAreas.length;
+    const hasRedacao = redacaoScore > 0;
+    const divisor = areasCount + (hasRedacao ? 1 : 0);
+    
+    // Cálculo da média final
+    const finalAverage = divisor > 0 ? Math.round((areasTotal + redacaoScore) / divisor) : 0;
+    
+    return {
+        theta: triResults.theta,
+        score: finalAverage, // Agora a média reflete a realidade das áreas respondidas
+        band: scoreToBand(finalAverage),
+        scoresByArea: triResults.scoresByArea,
+        redacaoScore: redacaoScore
+    };
 }

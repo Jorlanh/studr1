@@ -85,16 +85,17 @@ model UserDevice {
 }
 
 model Exam {
-  id           String         @id @default(cuid())
+  id           String        @id @default(cuid())
   userId       String
-  type         String         @default("LEGACY") // "PRACTICE", "MOCK_AREA", "MOCK_FULL", "LEGACY"
-  area         String?        // null for PRACTICE; area code for MOCK_AREA/MOCK_FULL
+  type         String        @default("LEGACY")
+  area         String?       
+  languagePreference String?
   score        Float?
   theta        Float?
   band         String?
   timeSpentSec Int?
   finalizedAt  DateTime?
-  createdAt    DateTime       @default(now())
+  createdAt    DateTime      @default(now())
 
   user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   questions ExamQuestion[]

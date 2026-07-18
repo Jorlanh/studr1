@@ -218,8 +218,25 @@ $env:TEST="1"; npx vitest run --config vitest.integration.config.js test/securit
 ```
 
 ---
+## ROTA DE TESTE DA FOICE - Proteção extra para não rodar em produção real
+app.post('/api/admin/force-rollover', authenticateToken, requireAdmin, async (req, res) => {
+    // Adicione esta verificação se quiser bloquear em produção
+    if (process.env.NODE_ENV === 'production') {
+        return res.status(403).json({ error: "Operação proibida em produção." });
+    }
+
+    try {
+        await rolloverWeek();
+        res.json({ message: "A foice passou. Ligas atualizadas e XP zerado." });
+    } catch (err) {
+        console.error('[Admin] Erro no rollover manual:', err);
+        res.status(500).json({ error: 'Erro ao executar o rollover.' });
+    }
+});
+```
+---
 
 ## Contato
 
 Projeto: **Studr / SBM Cloud**  
-Responsável: Fabio Patricio — appmagic2026@gmail.com
+Responsável: Jorlan Heider — jorlan25.js@gmail.com
