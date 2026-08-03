@@ -39,8 +39,8 @@ model User {
   trialQuestionsDate    String?           // YYYY-MM-DD of current daily counter window
   trialQuestionsUsed    Int               @default(0)
   currentLeague         String            @default("BRONZE")
-  simuladosQuota Int @default(0)
-  triQuota       Int @default(0)
+  simuladosQuota        Int               @default(0)
+  triQuota              Int               @default(0)
   
   // Relacionamentos Existentes
   exams                 Exam[]
@@ -52,6 +52,9 @@ model User {
   xpRecord              UserXp?
   userProgress          UserProgress[]
   rankings              RankingSnapshot[]
+
+  // 🔥 INCREMENTO: HISTÓRICO DE REDAÇÕES (Adicionado aqui)
+  essays                EssaySubmission[]
 
   // 🗼 INCREMENTO: MODO TORRE INFINITA
   infiniteTower         UserInfiniteTower? 
@@ -85,17 +88,26 @@ model UserDevice {
 }
 
 model Exam {
-  id           String        @id @default(cuid())
-  userId       String
-  type         String        @default("LEGACY")
-  area         String?       
+  id                 String        @id @default(cuid())
+  userId             String
+  type               String        @default("LEGACY")
+  area               String?       
   languagePreference String?
-  score        Float?
-  theta        Float?
-  band         String?
-  timeSpentSec Int?
-  finalizedAt  DateTime?
-  createdAt    DateTime      @default(now())
+  score              Float?
+  theta              Float?
+  band               String?
+  timeSpentSec       Int?
+  
+  // 🔥 ESTADOS DE PAUSA E RASCUNHO
+  status             String        @default("IN_PROGRESS") // "IN_PROGRESS", "PAUSED", "COMPLETED", "CANCELED"
+  currentPhase       String        @default("DAY1")
+  currentQuestionIdx Int           @default(0)
+  timeRemaining      Int?
+  redacaoText        String?
+  scratchpadText     String?
+
+  finalizedAt        DateTime?
+  createdAt          DateTime      @default(now())
 
   user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   questions ExamQuestion[]
@@ -125,9 +137,9 @@ model ExamQuestion {
 model QuestionCalibration {
   id         String   @id @default(cuid())
   difficulty String   @unique  // "EASY", "MEDIUM", "HARD"
-  a          Float              // discriminação
-  b          Float              // dificuldade (θ)
-  c          Float              // chute (pseudo-acerto)
+  a          Float             // discriminação
+  b          Float             // dificuldade (θ)
+  c          Float             // chute (pseudo-acerto)
   updatedAt  DateTime @updatedAt
 }
 
@@ -221,13 +233,13 @@ model RankingSnapshot {
 // ──────────────────────────────────────────────────────────────────────────────
 
 model AffiliateProduct {
-  id              String   @id @default(cuid())
-  productType     String   @unique  // 'monthly' | 'annual' | 'simulado'
-  label           String            // display name
-  checkoutUrl     String
+  id               String   @id @default(cuid())
+  productType      String   @unique  // 'monthly' | 'annual' | 'simulado'
+  label            String            // display name
+  checkoutUrl      String
   kiwifyInviteLink String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 model AffiliateLink {
@@ -283,4 +295,27 @@ model TowerFloor {
 
   // Garante que o usuário não tenha o mesmo andar duplicado no mesmo prédio
   @@unique([towerUserId, building, floorNumber])
+}
+
+// 🔥 INCREMENTO FINAL: HISTÓRICO DE REDAÇÕES IA
+model EssaySubmission {
+  id              String   @id @default(cuid())
+  userId          String
+  themeTitle      String
+  essayText       String
+  totalScore      Int
+  comp1           Int
+  comp2           Int
+  comp3           Int
+  comp4           Int
+  comp5           Int
+  generalFeedback String
+  strengths       String[]
+  weaknesses      String[]
+  motivatingTexts String[]
+  createdAt       DateTime @default(now())
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }

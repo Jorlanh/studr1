@@ -229,32 +229,32 @@ export const generateQuestionBatch = async (area, requestedCount = 1, specificTo
     const areaLabel = area === 'Todas as Áreas' ? "diversas matérias do ENEM" : area;
 
     let contentPrompt = "";
-    // 🔥 INCREMENTO: Trava de segurança para garantir a hierarquia perfeita no Front-end
     let exactSubjectInstruction = `"Matéria Específica (ex: Botânica, Geopolítica)"`; 
 
-    // 🔥 NOVO: INTERCEPTADOR DE IDIOMAS ESTRANGEIROS
+    // 🔥 BLINDAGEM MÁXIMA DE IDIOMA ESTRANGEIRO
     const searchStr = `${area || ''} ${specificTopic || ''}`.toLowerCase();
     let languageInstruction = "";
     
     if (searchStr.includes('inglês') || searchStr.includes('ingles') || searchStr.includes('english')) {
-    languageInstruction = `\n\nDIRETRIZ DE IDIOMA MANDATÓRIA: Esta é uma questão de LÍNGUA INGLESA. TRADUZA COMPLETAMENTE o texto de apoio (context), o enunciado (stem) e TODAS as opções (options) para o INGLÊS. É PROIBIDO usar Português nessas partes. Apenas a explicação (explanation) deve ser em Português do Brasil.`;
-    } else if (searchStr.includes('espanhol') || searchStr.includes('spanish')) {
+        languageInstruction = `\n\nDIRETRIZ DE IDIOMA MANDATÓRIA: Esta é uma questão de LÍNGUA INGLESA. TRADUZA COMPLETAMENTE o texto de apoio (context), o enunciado (stem) e TODAS as opções (options) para o INGLÊS. É PROIBIDO usar Português nessas partes. Apenas a explicação (explanation) deve ser em Português do Brasil.`;
+    } else if (searchStr.includes('espanhol') || searchStr.includes('spanish') || searchStr.includes('español')) {
+        // 🔥 Agora a palavra 'español' está contemplada e forçará a tradução da IA!
         languageInstruction = `\n\nDIRETRIZ DE IDIOMA MANDATÓRIA: Esta é uma questão de LÍNGUA ESPANHOLA. TRADUZA COMPLETAMENTE o texto de apoio (context), o enunciado (stem) e TODAS as opções (options) para o ESPANHOL. É PROIBIDO usar Português nessas partes. Apenas a explicação (explanation) deve ser em Português do Brasil.`;
     }
 
     if (isReviewErrors && specificTopic && specificTopic.trim() !== "") {
         contentPrompt = `Gere ${count} questões ENEM focadas em corrigir os erros do aluno sobre o tópico específico "${specificTopic}" em ${areaLabel}.${exclusionPrompt}`;
-        exactSubjectInstruction = `"${specificTopic}"`; // Força a IA a devolver a string exata
+        exactSubjectInstruction = `"${specificTopic}"`; 
     } else if (isReviewErrors) {
         contentPrompt = `Gere ${count} questões ENEM sobre pegadinhas e erros comuns em ${areaLabel}.${exclusionPrompt}`;
     } else if (specificTopic && specificTopic.trim() !== "") {
         contentPrompt = `Gere ${count} questões ENEM sobre "${specificTopic}".${exclusionPrompt}`;
-        exactSubjectInstruction = `"${specificTopic}"`; // Força a IA a devolver a string exata
+        exactSubjectInstruction = `"${specificTopic}"`; 
     } else {
         contentPrompt = `Gere ${count} questões ENEM inéditas de ${areaLabel}. Variedade alta.${exclusionPrompt}`;
     }
 
-    // Injeta a diretriz de idioma (se aplicável)
+    // Injeta a diretriz de idioma
     contentPrompt += languageInstruction;
 
     const prompt = `${contentPrompt}

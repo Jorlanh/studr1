@@ -2132,22 +2132,71 @@ app.post('/api/practice/start', authenticateToken, async (req, res) => {
 
 });
 
+// 🔥 1. BUSCAR SIMULADO PAUSADO
+app.get('/api/exams/active', authenticateToken, async (req, res) => {
+    try {
+        const activeExam = await prisma.exam.findFirst({
+            where: { 
+                userId: req.user.userId, 
+                type: 'MOCK_FULL',
+                status: { in: ['IN_PROGRESS', 'PAUSED'] },
+                finalizedAt: null 
+            },
+            include: { 
+                questions: { orderBy: { orderIndex: 'asc' } } 
+            }
+        });
+        res.json({ activeExam });
+    } catch (error) {
+        console.error('Erro ao buscar simulado ativo:', error);
+        res.status(500).json({ error: 'Erro ao buscar simulado.' });
+    }
+});
 
+// 🔥 2. PAUSAR SIMULADO
+app.post('/api/exams/:id/pause', authenticateToken, async (req, res) => {
+    try {
+        const { currentPhase, currentQuestionIdx, timeRemaining, redacaoText, scratchpadText } = req.body;
+        
+        await prisma.exam.update({
+            where: { id: req.params.id, userId: req.user.userId },
+            data: {
+                status: 'PAUSED',
+                currentPhase,
+                currentQuestionIdx,
+                timeRemaining,
+                redacaoText,
+                scratchpadText
+            }
+        });
+        res.json({ ok: true });
+    } catch (error) {
+        console.error('Erro ao pausar simulado:', error);
+        res.status(500).json({ error: 'Erro ao salvar o progresso.' });
+    }
+});
 
+// 🔥 3. INICIAR SIMULADO (Com invalidação)
 app.post('/api/mock/start', authenticateToken, async (req, res) => {
     try {
         const check = await checkAndConsumeMock(req.user.userId);
         if (!check.allowed) return res.status(403).json({ error: check.reason });
 
-        // Captura o 'mode' e a 'foreignLanguagePreference' (Novo campo)
         const { mode, area, foreignLanguagePreference } = req.body || {};
+
+        // INVALIDE QUALQUER SIMULADO COMPLETO ANTERIOR QUE ESTEJA PENDENTE
+        if (mode === 'FULL') {
+            await prisma.exam.updateMany({
+                where: { userId: req.user.userId, type: 'MOCK_FULL', finalizedAt: null },
+                data: { status: 'CANCELED', finalizedAt: new Date() }
+            });
+        }
 
         const exam = await prisma.exam.create({
             data: {
                 userId: req.user.userId,
                 type: mode === 'FULL' ? 'MOCK_FULL' : 'MOCK_AREA',
                 area: mode === 'AREA' ? (area || null) : 'MIXED',
-                // Salva a preferência do usuário aqui
                 languagePreference: foreignLanguagePreference || 'INGLES', 
             },
         });
@@ -2158,8 +2207,6 @@ app.post('/api/mock/start', authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Erro ao iniciar simulado.' });
     }
 });
-
-
 
 app.post('/api/exams/:id/finalize', authenticateToken, async (req, res) => {
     try {
@@ -2180,7 +2227,8 @@ app.post('/api/exams/:id/finalize', authenticateToken, async (req, res) => {
             await prisma.user.update({ where: { id: userId }, data: { triQuota: { decrement: 1 } } });
         }
 
-        const { responses, redacaoScore, redacaoText } = req.body;
+        // 🔥 CAPTURA O RASCUNHO (scratchpadText)
+        const { responses, redacaoScore, redacaoText, scratchpadText } = req.body;
 
         if (!Array.isArray(responses) || responses.length === 0) {
             return res.status(400).json({ error: 'Respostas inválidas.' });
@@ -2197,6 +2245,7 @@ app.post('/api/exams/:id/finalize', authenticateToken, async (req, res) => {
                 theta: finalGrade.theta, 
                 band: finalGrade.band, 
                 timeSpentSec, 
+                scratchpadText: scratchpadText || null, // 🔥 SALVA O RASCUNHO NO BANCO
                 finalizedAt: new Date() 
             },
         });
@@ -2240,7 +2289,7 @@ app.post('/api/exams/:id/finalize', authenticateToken, async (req, res) => {
 
         if (updateOps.length > 0) await Promise.all(updateOps);
 
-        // 🔥 RESPOSTA INSTANTÂNEA: Envia a nota pro Front-end imediatamente para não dar Timeout (O fim do Bug do 400)
+        // 🔥 RESPOSTA INSTANTÂNEA: Envia a nota pro Front-end imediatamente para não dar Timeout
         res.json({ score: finalGrade.score, band: finalGrade.band, theta: finalGrade.theta, scoresByArea: finalGrade.scoresByArea });
 
         // 🔥 BACKGROUND SYNC: Salva as 180 questões no banco de forma silenciosa sem segurar a tela do usuário
@@ -2370,7 +2419,64 @@ app.get('/api/exams/:id', authenticateToken, async (req, res) => {
 
 });
 
+// =========================================================================
+// 📝 ROTAS DE HISTÓRICO DE REDAÇÕES (ESSAYS)
+// =========================================================================
 
+// 1. Rota para SALVAR uma nova redação no histórico (Com Blindagem de Tipos)
+app.post('/api/essays', authenticateToken, async (req, res) => {
+    try {
+        const {
+            themeTitle, essayText, totalScore,
+            comp1, comp2, comp3, comp4, comp5,
+            generalFeedback, strengths, weaknesses,
+            motivatingTexts // 🔥 Captura os textos do front-end
+        } = req.body;
+
+        console.log('[API] Salvando redação para o usuário:', req.user.userId);
+
+        const newEssay = await prisma.essaySubmission.create({
+            data: {
+                userId: req.user.userId,
+                themeTitle: themeTitle || 'Tema não informado',
+                essayText: essayText || 'Sem texto',
+                                // Força a conversão para Número (Int) para o Prisma não travar
+
+                totalScore: Number(totalScore) || 0,
+                comp1: Number(comp1) || 0,
+                comp2: Number(comp2) || 0,
+                comp3: Number(comp3) || 0,
+                comp4: Number(comp4) || 0,
+                comp5: Number(comp5) || 0,
+                generalFeedback: generalFeedback || 'Sem feedback gerado.',
+                // Garante que seja um Array, mesmo se vier vazio
+                strengths: Array.isArray(strengths) ? strengths : [],
+                weaknesses: Array.isArray(weaknesses) ? weaknesses : [],
+                motivatingTexts: Array.isArray(motivatingTexts) ? motivatingTexts : [] // 🔥 Salva no banco
+            }
+        });
+
+        res.status(201).json(newEssay);
+    } catch (error) {
+        console.error('[POST /api/essays] Erro CRÍTICO ao salvar redação:', error);
+        res.status(500).json({ error: 'Erro interno ao salvar o histórico da redação.' });
+    }
+});
+
+// 2. Rota para BUSCAR o histórico de redações do aluno
+app.get('/api/essays', authenticateToken, async (req, res) => {
+    try {
+        const essays = await prisma.essaySubmission.findMany({
+            where: { userId: req.user.userId }, 
+            orderBy: { createdAt: 'desc' }
+        });
+
+        res.status(200).json(essays);
+    } catch (error) {
+        console.error('[GET /api/essays] Erro ao buscar histórico:', error);
+        res.status(500).json({ error: 'Erro interno ao buscar as redações.' });
+    }
+});
 
 // ─── Torre Infinita Rotas ─────────────────────────────────────────────────────
 
